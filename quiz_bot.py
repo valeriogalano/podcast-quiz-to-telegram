@@ -42,6 +42,38 @@ Rispondi SOLO con un JSON valido, senza backtick, senza testo aggiuntivo:
 }
 correct_option_ids è una lista di indici 0-based. Domande concrete e specifiche, non generiche."""
 
+_GENERIC_TOPICS = [
+    "storia dell'informatica: personaggi, invenzioni, aneddoti",
+    "reti e protocolli: HTTP, DNS, TCP/IP, TLS, WebSocket",
+    "sicurezza informatica: vulnerabilità comuni, crittografia, attacchi noti",
+    "sistemi operativi: processi, file system, permessi, shell",
+    "Git e controllo versione: comandi, workflow, conflitti",
+    "Docker e containerizzazione: immagini, volumi, networking",
+    "database SQL: query, JOIN, indici, transazioni",
+    "database NoSQL: Redis, MongoDB, casi d'uso",
+    "API REST: metodi HTTP, status code, autenticazione",
+    "LLM e AI generativa: token, prompt, RAG, fine-tuning, limitazioni",
+    "cloud e infrastruttura: DNS, CDN, load balancer, serverless",
+    "algoritmi e strutture dati di base: stack, queue, hash map, complessità",
+    "web e browser: cookie, localStorage, CORS, rendering",
+    "privacy e GDPR: dati personali, consenso, diritti dell'utente",
+    "open source: licenze, community, modello di sviluppo",
+    "terminale e scripting: bash, pipe, redirect, variabili d'ambiente",
+    "debugging e testing: unit test, stack trace, TDD",
+    "Python: comportamenti inattesi, decoratori, GIL, gestione memoria",
+    "JavaScript: event loop, closure, Promise, hoisting, this",
+    "TypeScript: tipi, interfacce, generici, narrowing",
+    "Go: goroutine, channel, defer, garbage collector",
+    "Rust: ownership, borrow checker, lifetimes, sicurezza della memoria",
+    "Java: JVM, garbage collection, interfacce, generici",
+    "C: puntatori, gestione manuale della memoria, undefined behavior",
+    "SQL avanzato: window function, CTE, explain, ottimizzazione query",
+    "PHP: storia, evoluzione, usi moderni, differenze con altri linguaggi",
+    "Ruby: filosofia del linguaggio, convenzioni, Rails",
+    "Kotlin: null safety, coroutine, interoperabilità con Java",
+    "Swift: optionals, protocolli, ARC, differenze con Objective-C",
+]
+
 _EPISODE_SYSTEM = """\
 Sei un assistente che genera quiz in italiano per un canale Telegram di un podcast di informatica.
 
@@ -56,14 +88,10 @@ TIPOLOGIA B — Programmazione/tech: snippet da interpretare, completamento di c
 _GENERIC_SYSTEM = """\
 Sei un assistente che genera quiz in italiano per un canale Telegram di un podcast di informatica.
 
-Genera UN SOLO quiz su informatica/programmazione. Scegli casualmente tra:
-- Best practice Python, OOP, funzioni, tipi, scope
-- Docker, Git, REST API, database SQL/NoSQL
-- LLM, AI generativa, framework open source
-- Snippet Python da interpretare
-- Curiosità tecnologiche accessibili
-
-Stimola la curiosità, evita algoritmi avanzati.
+Genera UN SOLO quiz sul tema specificato dall'utente. \
+Il quiz deve essere accessibile a un pubblico appassionato di tech ma non necessariamente sviluppatore. \
+Stimola la curiosità, evita algoritmi avanzati. \
+Preferisci domande su comportamenti inattesi, curiosità, errori comuni o concetti fondamentali.
 
 """ + _JSON_SCHEMA
 
@@ -202,8 +230,9 @@ def generate_quiz_content() -> tuple[dict, str | None]:
             return call_claude(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}"), title
         print("Nessun contenuto episodio disponibile, passo al quiz generico...")
 
-    print("Genero un quiz generico...")
-    return call_claude(_GENERIC_SYSTEM, "Genera un quiz su informatica o programmazione."), None
+    topic = random.choice(_GENERIC_TOPICS)
+    print(f"Genero un quiz generico (tema: {topic})...")
+    return call_claude(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}"), None
 
 
 def print_quiz(quiz: dict, episode_ref: str | None, index: int | None = None) -> None:
@@ -245,10 +274,14 @@ def main() -> None:
     print("Invio il poll su Telegram...")
     poll_message_id = send_poll(quiz)["result"]["message_id"]
 
+    correct = quiz["options"][quiz["correct_option_ids"][0]]
     print(
         f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
         f"type={'episodio' if episode_ref else 'generico'} "
-        f"episode={episode_ref!r} poll_id={poll_message_id} status=success"
+        f"episode={episode_ref!r} poll_id={poll_message_id} status=success\n"
+        f"  Q: {quiz['question']}\n"
+        f"  A: {correct}\n"
+        f"  💡 {quiz.get('explanation', '')}"
     )
     print("Quiz pubblicato con successo!")
 
