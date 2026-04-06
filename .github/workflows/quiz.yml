@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  publish-quiz:
+  publish:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,10 +19,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install anthropic feedparser requests
+        run: pip install anthropic feedparser requests python-dotenv
 
       - name: Run quiz bot
         env:
+          FEED_RSS_URL: ${{ secrets.FEED_RSS_URL }}
+          GITHUB_REPO: ${{ secrets.GITHUB_REPO }}
+          GITHUB_SCRIPTS_PATH: ${{ secrets.GITHUB_SCRIPTS_PATH }}
+          SCRIPT_EXTENSION: ${{ secrets.SCRIPT_EXTENSION }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python quiz_bot.py
+

@@ -57,23 +57,18 @@ Nel repository GitHub, vai su **Settings → Secrets and variables → Actions**
 ## Installazione e avvio locale
 
 ```bash
-pip install anthropic feedparser requests
-python quiz_bot.py
+pip install anthropic feedparser requests python-dotenv
 ```
 
-Per testare in locale, imposta le variabili d'ambiente prima di eseguire lo script:
+Copia il file `.env.example` in `.env` e compila i valori:
 
 ```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-export TELEGRAM_BOT_TOKEN="123456:ABC-..."
-python quiz_bot.py
+cp .env.example .env
 ```
 
-Su Windows (PowerShell):
+Poi esegui direttamente:
 
-```powershell
-$env:ANTHROPIC_API_KEY="sk-ant-..."
-$env:TELEGRAM_BOT_TOKEN="123456:ABC-..."
+```bash
 python quiz_bot.py
 ```
 
