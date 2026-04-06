@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/github/stars/valeriogalano/botcaster-quiz-generator?style=for-the-badge" alt="GitHub Stars"/>
     <img src="https://img.shields.io/github/forks/valeriogalano/botcaster-quiz-generator?style=for-the-badge" alt="GitHub Forks"/>
     <img src="https://img.shields.io/github/last-commit/valeriogalano/botcaster-quiz-generator?style=for-the-badge" alt="Last Commit"/>
-    <img src="https://img.shields.io/github/actions/workflow/status/valeriogalano/botcaster-quiz-generator/quiz.yml?style=for-the-badge&label=daily%20quiz" alt="GitHub Actions Status"/>
+    <img src="https://img.shields.io/github/actions/workflow/status/valeriogalano/botcaster-quiz-generator/quiz_publish.yml?style=for-the-badge&label=daily%20quiz" alt="GitHub Actions Status"/>
     <a href="https://pensieriincodice.it/sostieni" target="_blank" rel="noopener noreferrer">
       <img src="https://img.shields.io/badge/sostieni-Pensieri_in_codice-fb6400?style=for-the-badge" alt="Sostieni Pensieri in codice"/>
     </a>
@@ -17,7 +17,15 @@
 
 ## Come funziona
 
-Lo script scarica il feed RSS del podcast, seleziona un episodio casuale ed estrae la trascrizione disponibile. Prova poi a recuperare il file script dell'episodio dal repo GitHub corrispondente. Con il contenuto raccolto chiama l'API di Anthropic (Claude Haiku) per generare un quiz in italiano, scegliendo casualmente tra domande sull'argomento dell'episodio e quiz di programmazione/tech. Il quiz viene quindi pubblicato nel canale Telegram come poll nativo, con spiegazione della risposta corretta e un disclaimer di trasparenza.
+Ad ogni esecuzione lo script:
+
+1. Verifica che ci sia stata attività recente nel gruppo Telegram di riferimento (configurabile). Se non ci sono messaggi nelle ultime 6 ore, il quiz viene saltato.
+2. Scarica il feed RSS del podcast e seleziona un episodio casuale.
+3. Decide il tipo di quiz:
+   - **75% delle volte** genera un quiz generico su un tema tech scelto casualmente tra oltre 30 categorie: linguaggi di programmazione (Python, JavaScript, Go, Rust, Java, PHP…), reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro.
+   - **25% delle volte** tenta di generare un quiz basato sull'episodio selezionato, estraendo la trascrizione dal feed RSS e cercando il file script corrispondente nel repo GitHub. Se il contenuto non è disponibile, ricade sul quiz generico.
+4. Chiama l'API Anthropic (Claude Haiku) con il contenuto scelto e riceve un quiz in formato JSON con domanda, 4 opzioni, risposta corretta e spiegazione.
+5. Pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con la spiegazione visibile dopo aver risposto e apertura di 24 ore.
 
 ---
 
@@ -31,26 +39,20 @@ Lo script scarica il feed RSS del podcast, seleziona un episodio casuale ed estr
 
 ## Configurazione
 
-### 1. Variabili nello script
+### 1. Variabili d'ambiente / `.env`
 
-Apri `quiz_bot.py` e sostituisci i segnaposto nella sezione **Configurazione** in cima al file:
+Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse variabili vanno aggiunte come **Secrets** in **Settings → Secrets and variables → Actions**.
 
-| Variabile | Descrizione |
-|---|---|
-| `FEED_RSS_URL` | URL del feed RSS del podcast |
-| `GITHUB_REPO` | Repo GitHub degli script (es. `utente/repo`) |
-| `GITHUB_SCRIPTS_PATH` | Cartella degli script nel repo (es. `scripts/` o `.`) |
-| `SCRIPT_EXTENSION` | Estensione dei file script (es. `.md` o `.txt`) |
-| `TELEGRAM_CHAT_ID` | Chat ID o username del canale/gruppo Telegram |
-
-### 2. Segreti GitHub Actions
-
-Nel repository GitHub, vai su **Settings → Secrets and variables → Actions** e aggiungi:
-
-| Segreto | Descrizione |
-|---|---|
-| `ANTHROPIC_API_KEY` | Chiave API di Anthropic |
-| `TELEGRAM_BOT_TOKEN` | Token del bot Telegram |
+| Variabile | Obbligatoria | Descrizione |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | ✓ | Chiave API di Anthropic |
+| `TELEGRAM_BOT_TOKEN` | ✓ | Token del bot Telegram |
+| `TELEGRAM_CHAT_ID` | ✓ | Chat ID o username del canale/gruppo dove pubblicare il quiz |
+| `FEED_RSS_URL` | ✓ | URL del feed RSS del podcast |
+| `GITHUB_REPO` | ✓ | Repo GitHub degli script (es. `utente/repo`) |
+| `GITHUB_SCRIPTS_PATH` | ✓ | Cartella degli script nel repo (es. `scripts/`) |
+| `SCRIPT_EXTENSION` | ✓ | Estensioni dei file script separate da virgola (es. `.json,.yml`) |
+| `TELEGRAM_ACTIVITY_CHAT_ID` |  | Gruppo da monitorare per l'attività (default: `TELEGRAM_CHAT_ID`) |
 
 ---
 
@@ -70,6 +72,89 @@ Poi esegui direttamente:
 
 ```bash
 python quiz_bot.py
+```
+
+---
+
+## Topic dei quiz generici
+
+Il tema viene scelto casualmente a ogni esecuzione tra questi 29 argomenti:
+
+| Categoria | Dettaglio |
+|---|---|
+| Storia dell'informatica | personaggi, invenzioni, aneddoti |
+| Reti e protocolli | HTTP, DNS, TCP/IP, TLS, WebSocket |
+| Sicurezza informatica | vulnerabilità comuni, crittografia, attacchi noti |
+| Sistemi operativi | processi, file system, permessi, shell |
+| Git | comandi, workflow, conflitti |
+| Docker | immagini, volumi, networking |
+| Database SQL | query, JOIN, indici, transazioni |
+| Database NoSQL | Redis, MongoDB, casi d'uso |
+| SQL avanzato | window function, CTE, explain, ottimizzazione query |
+| API REST | metodi HTTP, status code, autenticazione |
+| LLM e AI generativa | token, prompt, RAG, fine-tuning, limitazioni |
+| Cloud e infrastruttura | DNS, CDN, load balancer, serverless |
+| Algoritmi e strutture dati | stack, queue, hash map, complessità |
+| Web e browser | cookie, localStorage, CORS, rendering |
+| Privacy e GDPR | dati personali, consenso, diritti dell'utente |
+| Open source | licenze, community, modello di sviluppo |
+| Terminale e scripting | bash, pipe, redirect, variabili d'ambiente |
+| Debugging e testing | unit test, stack trace, TDD |
+| Python | comportamenti inattesi, decoratori, GIL, gestione memoria |
+| JavaScript | event loop, closure, Promise, hoisting, this |
+| TypeScript | tipi, interfacce, generici, narrowing |
+| Go | goroutine, channel, defer, garbage collector |
+| Rust | ownership, borrow checker, lifetimes, sicurezza della memoria |
+| Java | JVM, garbage collection, interfacce, generici |
+| C | puntatori, gestione manuale della memoria, undefined behavior |
+| PHP | storia, evoluzione, usi moderni, differenze con altri linguaggi |
+| Ruby | filosofia del linguaggio, convenzioni, Rails |
+| Kotlin | null safety, coroutine, interoperabilità con Java |
+| Swift | optionals, protocolli, ARC, differenze con Objective-C |
+
+---
+
+## Prompt Claude
+
+### Quiz generico
+
+```
+Sei un assistente che genera quiz in italiano per un canale Telegram di un podcast di informatica.
+
+Genera UN SOLO quiz sul tema specificato dall'utente.
+Il quiz deve essere accessibile a un pubblico appassionato di tech ma non necessariamente sviluppatore.
+Stimola la curiosità, evita algoritmi avanzati.
+Preferisci domande su comportamenti inattesi, curiosità, errori comuni o concetti fondamentali.
+
+[schema JSON]
+```
+
+### Quiz da episodio
+
+```
+Sei un assistente che genera quiz in italiano per un canale Telegram di un podcast di informatica.
+
+Genera UN SOLO quiz dal contenuto fornito. Scegli casualmente tra:
+
+TIPOLOGIA A — Argomento del podcast: concetto, opinione, fatto o tema dell'episodio.
+Adatta a un pubblico appassionato ma non sviluppatore professionista.
+
+TIPOLOGIA B — Programmazione/tech: snippet da interpretare, completamento di codice,
+LLM/AI, linguaggi o framework. Accessibile: stimola la curiosità, non la competenza specializzata.
+
+[schema JSON]
+```
+
+### Schema JSON richiesto
+
+```json
+{
+  "question": "testo della domanda (max 300 caratteri)",
+  "description": "snippet di codice o contesto in monospace (max 200 caratteri, opzionale)",
+  "options": ["opzione A", "opzione B", "opzione C", "opzione D"],
+  "correct_option_ids": [0],
+  "explanation": "spiegazione breve della risposta corretta (max 200 caratteri)"
+}
 ```
 
 ---
