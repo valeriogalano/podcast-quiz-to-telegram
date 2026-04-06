@@ -24,8 +24,8 @@ jobs:
       - name: Run quiz bot
         env:
           FEED_RSS_URL: ${{ secrets.FEED_RSS_URL }}
-          GITHUB_REPO: ${{ secrets.GITHUB_REPO }}
-          GITHUB_SCRIPTS_PATH: ${{ secrets.GITHUB_SCRIPTS_PATH }}
+          GH_REPO: ${{ secrets.GH_REPO }}
+          GH_SCRIPTS_PATH: ${{ secrets.GH_SCRIPTS_PATH }}
           SCRIPT_EXTENSION: ${{ secrets.SCRIPT_EXTENSION }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

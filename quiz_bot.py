@@ -18,8 +18,8 @@ import requests
 
 # ── Configurazione ────────────────────────────────────────────────────────────
 FEED_RSS_URL = os.environ.get("FEED_RSS_URL", "")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
-GITHUB_SCRIPTS_PATH = os.environ.get("GITHUB_SCRIPTS_PATH", "")
+GITHUB_REPO = os.environ.get("GH_REPO", "")
+GITHUB_SCRIPTS_PATH = os.environ.get("GH_SCRIPTS_PATH", "")
 SCRIPT_EXTENSIONS = tuple(
     ext.strip() for ext in os.environ.get("SCRIPT_EXTENSION", ".md").split(",")
 )

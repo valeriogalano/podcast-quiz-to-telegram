@@ -49,8 +49,8 @@ Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse v
 | `TELEGRAM_BOT_TOKEN` | ✓ | Token del bot Telegram |
 | `TELEGRAM_CHAT_ID` | ✓ | Chat ID o username del canale/gruppo dove pubblicare il quiz |
 | `FEED_RSS_URL` | ✓ | URL del feed RSS del podcast |
-| `GITHUB_REPO` | ✓ | Repo GitHub degli script (es. `utente/repo`) |
-| `GITHUB_SCRIPTS_PATH` | ✓ | Cartella degli script nel repo (es. `scripts/`) |
+| `GH_REPO` | ✓ | Repo GitHub degli script (es. `utente/repo`) |
+| `GH_SCRIPTS_PATH` | ✓ | Cartella degli script nel repo (es. `scripts/`) |
 | `SCRIPT_EXTENSION` | ✓ | Estensioni dei file script separate da virgola (es. `.json,.yml`) |
 | `TELEGRAM_ACTIVITY_CHAT_ID` |  | Gruppo da monitorare per l'attività (default: `TELEGRAM_CHAT_ID`) |
 
