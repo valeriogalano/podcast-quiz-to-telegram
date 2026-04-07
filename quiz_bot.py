@@ -126,8 +126,7 @@ def has_recent_activity(hours: int = 6) -> bool:
 def fetch_random_episode() -> dict:
     feed = feedparser.parse(FEED_RSS_URL)
     if not feed.entries:
-        print("Errore: nessun episodio trovato nel feed RSS.", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError("nessun episodio trovato nel feed RSS")
     return random.choice(feed.entries)
 
 
@@ -212,23 +211,27 @@ def send_poll(quiz: dict) -> dict:
 
 def generate_quiz_content() -> tuple[dict, str | None]:
     """Genera il quiz e ritorna (quiz, episode_ref)."""
-    episode = fetch_random_episode()
-    title = episode.get("title", "Episodio senza titolo")
-    print(f"Episodio selezionato: {title}")
-
-    if random.random() < 0.25:
-        print("Estraggo la trascrizione...")
-        transcript = extract_transcript(episode)
-        print("Cerco lo script nel repo GitHub...")
-        script = fetch_github_script(title)
-        if transcript or script:
-            content = "\n\n".join(filter(None, [
-                f"TRASCRIZIONE:\n{transcript[:4000]}" if transcript else "",
-                f"SCRIPT:\n{script[:2000]}" if script else "",
-            ]))
-            print("Genero il quiz basato sull'episodio...")
-            return call_claude(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}"), title
-        print("Nessun contenuto episodio disponibile, passo al quiz generico...")
+    if FEED_RSS_URL and random.random() < 0.25:
+        try:
+            episode = fetch_random_episode()
+        except RuntimeError as e:
+            print(f"Avviso: impossibile usare il feed RSS ({e}). Passo al quiz generico.", file=sys.stderr)
+            episode = None
+        if episode is not None:
+            title = episode.get("title", "Episodio senza titolo")
+            print(f"Episodio selezionato: {title}")
+            print("Estraggo la trascrizione...")
+            transcript = extract_transcript(episode)
+            print("Cerco lo script nel repo GitHub...")
+            script = fetch_github_script(title)
+            if transcript or script:
+                content = "\n\n".join(filter(None, [
+                    f"TRASCRIZIONE:\n{transcript[:4000]}" if transcript else "",
+                    f"SCRIPT:\n{script[:2000]}" if script else "",
+                ]))
+                print("Genero il quiz basato sull'episodio...")
+                return call_claude(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}"), title
+            print("Nessun contenuto episodio disponibile, passo al quiz generico...")
 
     topic = random.choice(_GENERIC_TOPICS)
     print(f"Genero un quiz generico (tema: {topic})...")

@@ -23,11 +23,11 @@ jobs:
 
       - name: Run quiz bot
         env:
-          FEED_RSS_URL: ${{ secrets.FEED_RSS_URL }}
-          GH_REPO: ${{ secrets.GH_REPO }}
-          GH_SCRIPTS_PATH: ${{ secrets.GH_SCRIPTS_PATH }}
-          SCRIPT_EXTENSION: ${{ secrets.SCRIPT_EXTENSION }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          FEED_RSS_URL: ${{ vars.FEED_RSS_URL }}
+          GH_REPO: ${{ vars.GH_REPO }}
+          GH_SCRIPTS_PATH: ${{ vars.GH_SCRIPTS_PATH }}
+          SCRIPT_EXTENSION: ${{ vars.SCRIPT_EXTENSION }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python quiz_bot.py
