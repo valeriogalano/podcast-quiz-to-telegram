@@ -119,6 +119,8 @@ def has_recent_activity(hours: int = 4) -> bool:
         chat = msg.get("chat", {})
         if str(chat.get("id")) == activity_id or chat.get("username") == activity_id:
             if msg.get("date", 0) >= threshold:
+                ts = datetime.datetime.fromtimestamp(msg["date"], tz=datetime.timezone.utc).isoformat()
+                print(f"Ultimo messaggio rilevato alle: {ts}")
                 return True
     return False
 
