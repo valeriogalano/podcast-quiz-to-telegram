@@ -36,11 +36,11 @@ Rispondi SOLO con un JSON valido, senza backtick, senza testo aggiuntivo:
 {
   "question": "testo della domanda (max 300 caratteri)",
   "description": "snippet di codice o contesto in monospace (max 200 caratteri, ometti se non necessario)",
-  "options": ["opzione A", "opzione B", "opzione C", "opzione D"],
+  "options": ["opzione A", "opzione B", "opzione C"],
   "correct_option_ids": [0],
   "explanation": "spiegazione breve della risposta corretta (max 200 caratteri)"
 }
-correct_option_ids è una lista di indici 0-based. Domande concrete e specifiche, non generiche."""
+correct_option_ids è una lista di indici 0-based. Il numero di opzioni deve essere tra 2 e 6, scegli quello più adatto alla domanda. Domande concrete e specifiche, non generiche."""
 
 _GENERIC_TOPICS = [
     "storia dell'informatica: personaggi, invenzioni, aneddoti",
