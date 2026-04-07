@@ -267,8 +267,8 @@ def main() -> None:
         return
 
     print(f"Verifico attività recente in {TELEGRAM_ACTIVITY_CHAT_ID}...")
-    if not has_recent_activity():
-        print(f"Nessuna attività nelle ultime 6 ore in {TELEGRAM_ACTIVITY_CHAT_ID}. Quiz saltato.")
+    if has_recent_activity():
+        print(f"Attività recente rilevata in {TELEGRAM_ACTIVITY_CHAT_ID}. Quiz saltato per non interrompere la conversazione.")
         sys.exit(0)
 
     print("Scarico il feed RSS...")
