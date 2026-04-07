@@ -96,7 +96,7 @@ Preferisci domande su comportamenti inattesi, curiosità, errori comuni o concet
 """ + _JSON_SCHEMA
 
 
-def has_recent_activity(hours: int = 6) -> bool:
+def has_recent_activity(hours: int = 4) -> bool:
     """Ritorna True se c'è stata attività nel gruppo di riferimento nelle ultime `hours` ore."""
     threshold = time.time() - hours * 3600
     try:
