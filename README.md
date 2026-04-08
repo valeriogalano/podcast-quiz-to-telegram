@@ -3,10 +3,10 @@
   <h1>Pensieri In Codice — Quiz Generator</h1>
   <p>Pubblica automaticamente un quiz giornaliero nel canale Telegram del podcast, generato da Claude AI a partire dagli episodi.</p>
   <p>
-    <img src="https://img.shields.io/github/stars/valeriogalano/botcaster-quiz-generator?style=for-the-badge" alt="GitHub Stars"/>
-    <img src="https://img.shields.io/github/forks/valeriogalano/botcaster-quiz-generator?style=for-the-badge" alt="GitHub Forks"/>
-    <img src="https://img.shields.io/github/last-commit/valeriogalano/botcaster-quiz-generator?style=for-the-badge" alt="Last Commit"/>
-    <img src="https://img.shields.io/github/actions/workflow/status/valeriogalano/botcaster-quiz-generator/quiz_publish.yml?style=for-the-badge&label=daily%20quiz" alt="GitHub Actions Status"/>
+    <img src="https://img.shields.io/github/stars/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="GitHub Stars"/>
+    <img src="https://img.shields.io/github/forks/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="GitHub Forks"/>
+    <img src="https://img.shields.io/github/last-commit/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="Last Commit"/>
+    <img src="https://img.shields.io/github/actions/workflow/status/valeriogalano/podcast-quiz-to-telegram/quiz_publish.yml?style=for-the-badge&label=daily%20quiz" alt="GitHub Actions Status"/>
     <a href="https://pensieriincodice.it/sostieni" target="_blank" rel="noopener noreferrer">
       <img src="https://img.shields.io/badge/sostieni-Pensieri_in_codice-fb6400?style=for-the-badge" alt="Sostieni Pensieri in codice"/>
     </a>
@@ -14,6 +14,8 @@
 </div>
 
 ---
+
+> **Vibe Coding experiment** — This project was built through iterative, AI-assisted development where the human steers intent and the AI writes most of the code. It works, it's tested, but it is first and foremost an experiment. Expect rough edges, quick evolution, and the occasional surprise. Issues and PRs are welcome.
 
 ## Come funziona
 
