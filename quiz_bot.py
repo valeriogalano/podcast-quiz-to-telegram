@@ -275,6 +275,7 @@ def main() -> None:
 
     print("Scarico il feed RSS...")
     quiz, episode_ref = generate_quiz_content()
+    print_quiz(quiz, episode_ref)
 
     print("Invio il poll su Telegram...")
     poll_message_id = send_poll(quiz)["result"]["message_id"]
