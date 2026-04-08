@@ -184,14 +184,3 @@ Se noti qualche problema o hai suggerimenti, sentiti libero di aprire una **Issu
 ## Importante
 
 Vorremmo mantenere questo repository aperto e gratuito per tutti, ma lo scraping del contenuto di questo repository **NON È CONSENTITO**. Se ritieni che questo lavoro ti sia utile e vuoi utilizzare qualche risorsa, ti preghiamo di citare come fonte il podcast e/o questo repository.
-
----
-
-<div align="center">
-  <p>Realizzato con ❤️ da <strong>Valerio Galano</strong></p>
-  <p>
-    <a href="https://valeriogalano.it/">Sito Web</a> |
-    <a href="https://daredevel.com/">Blog</a> |
-    <a href="https://pensieriincodice.it/">Podcast</a>
-  </p>
-</div>
