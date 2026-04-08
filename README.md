@@ -6,7 +6,7 @@
     <img src="https://img.shields.io/github/stars/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="GitHub Stars"/>
     <img src="https://img.shields.io/github/forks/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="GitHub Forks"/>
     <img src="https://img.shields.io/github/last-commit/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="Last Commit"/>
-    <img src="https://img.shields.io/github/actions/workflow/status/valeriogalano/podcast-quiz-to-telegram/quiz_publish.yml?style=for-the-badge&label=daily%20quiz" alt="GitHub Actions Status"/>
+    <img src="https://img.shields.io/github/actions/workflow/status/valeriogalano/podcast-quiz-to-telegram/quiz.yml?style=for-the-badge&label=daily%20quiz" alt="GitHub Actions Status"/>
     <a href="https://pensieriincodice.it/sostieni" target="_blank" rel="noopener noreferrer">
       <img src="https://img.shields.io/badge/sostieni-Pensieri_in_codice-fb6400?style=for-the-badge" alt="Sostieni Pensieri in codice"/>
     </a>

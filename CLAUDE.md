@@ -26,7 +26,7 @@ Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRA
 
 ## Workflow GitHub Actions
 
-`quiz_publish.yml` — si esegue ogni giorno alle 09:00 UTC (o manualmente via `workflow_dispatch`). Tutte le variabili d'ambiente vengono passate come GitHub Secrets.
+`quiz.yml` — si esegue ogni giorno alle 09:00 UTC (o manualmente via `workflow_dispatch`). Tutte le variabili d'ambiente vengono passate come GitHub Secrets.
 
 ## Logica principale
 
