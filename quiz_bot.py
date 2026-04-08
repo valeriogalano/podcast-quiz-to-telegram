@@ -240,6 +240,47 @@ def generate_quiz_content() -> tuple[dict, str | None]:
     return call_claude(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}"), None
 
 
+def validate_quiz(quiz: dict) -> list[str]:
+    """Controlla i limiti Telegram. Ritorna lista di errori, vuota se valido."""
+    errors = []
+    question = quiz.get("question", "")
+    description = quiz.get("description", "")
+    full_question = f"{question}\n\n{description}" if description else question
+    if len(full_question) > 300:
+        errors.append(f"question+description troppo lunga: {len(full_question)}/300 caratteri")
+    for i, opt in enumerate(quiz.get("options", [])):
+        if len(opt) > 100:
+            errors.append(f"opzione {i} troppo lunga: {len(opt)}/100 caratteri")
+    explanation = quiz.get("explanation", "")
+    if len(explanation) > 200:
+        errors.append(f"explanation troppo lunga: {len(explanation)}/200 caratteri")
+    return errors
+
+
+_MAX_QUIZ_RETRIES = 3
+
+
+def generate_valid_quiz() -> tuple[dict, str | None]:
+    """Genera un quiz valido rispetto ai limiti Telegram, con al massimo 3 tentativi."""
+    for attempt in range(1, _MAX_QUIZ_RETRIES + 1):
+        quiz, episode_ref = generate_quiz_content()
+        print_quiz(quiz, episode_ref)
+        errors = validate_quiz(quiz)
+        if not errors:
+            return quiz, episode_ref
+        print(
+            f"Quiz non valido (tentativo {attempt}/{_MAX_QUIZ_RETRIES}): {'; '.join(errors)}",
+            file=sys.stderr,
+        )
+        if attempt < _MAX_QUIZ_RETRIES:
+            print("Rigenero il quiz...")
+    print(
+        f"Errore: impossibile generare un quiz valido dopo {_MAX_QUIZ_RETRIES} tentativi.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def print_quiz(quiz: dict, episode_ref: str | None, index: int | None = None) -> None:
     prefix = f"[{index}] " if index is not None else ""
     tipo = f"episodio ({episode_ref})" if episode_ref else "generico"
@@ -274,8 +315,7 @@ def main() -> None:
         sys.exit(0)
 
     print("Scarico il feed RSS...")
-    quiz, episode_ref = generate_quiz_content()
-    print_quiz(quiz, episode_ref)
+    quiz, episode_ref = generate_valid_quiz()
 
     print("Invio il poll su Telegram...")
     poll_message_id = send_poll(quiz)["result"]["message_id"]
