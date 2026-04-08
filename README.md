@@ -19,13 +19,12 @@
 
 Ad ogni esecuzione lo script:
 
-1. Verifica che ci sia stata attività recente nel gruppo Telegram di riferimento (configurabile). Se non ci sono messaggi nelle ultime 6 ore, il quiz viene saltato.
-2. Scarica il feed RSS del podcast e seleziona un episodio casuale.
-3. Decide il tipo di quiz:
-   - **75% delle volte** genera un quiz generico su un tema tech scelto casualmente tra oltre 30 categorie: linguaggi di programmazione (Python, JavaScript, Go, Rust, Java, PHP…), reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro.
-   - **25% delle volte** tenta di generare un quiz basato sull'episodio selezionato, estraendo la trascrizione dal feed RSS e cercando il file script corrispondente nel repo GitHub. Se il contenuto non è disponibile, ricade sul quiz generico.
-4. Chiama l'API Anthropic (Claude Haiku) con il contenuto scelto e riceve un quiz in formato JSON con domanda, 4 opzioni, risposta corretta e spiegazione.
-5. Pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con la spiegazione visibile dopo aver risposto e apertura di 24 ore.
+1. Verifica che ci sia stata attività recente nel gruppo Telegram di riferimento (configurabile). Se ci sono messaggi nelle ultime **4 ore**, il quiz viene saltato per non interrompere la conversazione.
+2. Decide casualmente il tipo di quiz da generare:
+   - **75% delle volte**: quiz generico — sceglie un tema casuale tra oltre 30 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e chiama Claude Haiku per generarlo.
+   - **25% delle volte**: quiz da episodio — scarica il feed RSS, seleziona un episodio casuale, ne estrae la trascrizione e cerca il file script corrispondente nel repo GitHub. Se trova almeno uno dei due contenuti, li passa a Claude Haiku per generare il quiz. Se non trova nulla, ricade sul quiz generico.
+3. Valida il quiz rispetto ai limiti dell'API Telegram (domanda+descrizione ≤ 300 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **3 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
+4. Stampa il contenuto del quiz nei log (utile per il debug) e pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con la spiegazione visibile dopo aver risposto e apertura di 24 ore.
 
 ---
 
@@ -149,13 +148,22 @@ LLM/AI, linguaggi o framework. Accessibile: stimola la curiosità, non la compet
 
 ```json
 {
-  "question": "testo della domanda (max 300 caratteri)",
-  "description": "snippet di codice o contesto in monospace (max 200 caratteri, opzionale)",
-  "options": ["opzione A", "opzione B", "opzione C", "opzione D"],
+  "question": "testo della domanda",
+  "description": "snippet di codice o contesto in monospace (opzionale)",
+  "options": ["opzione A", "opzione B", ...],
   "correct_option_ids": [0],
-  "explanation": "spiegazione breve della risposta corretta (max 200 caratteri)"
+  "explanation": "spiegazione breve della risposta corretta"
 }
 ```
+
+Limiti imposti dall'API Telegram (validati a runtime, con rigenerazione automatica in caso di sforamento):
+
+| Campo | Limite |
+|---|---|
+| `question` + `description` combinati | max 300 caratteri |
+| ogni elemento di `options` | max 100 caratteri |
+| `explanation` | max 200 caratteri |
+| numero di opzioni | da 2 a 6 |
 
 ---
 
