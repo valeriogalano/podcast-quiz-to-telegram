@@ -47,7 +47,7 @@ class TestFetchRandomEpisode(unittest.TestCase):
     @patch("quiz_bot.feedparser")
     def test_exits_on_empty_feed(self, mock_feedparser):
         mock_feedparser.parse.return_value.entries = []
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(RuntimeError):
             quiz_bot.fetch_random_episode()
 
 
@@ -149,27 +149,41 @@ class TestSendPoll(unittest.TestCase):
 
 
 class TestHasRecentActivity(unittest.TestCase):
-    def _make_update(self, chat_id, username, timestamp):
+    def _make_update(self, chat_id, username, timestamp, update_id=1):
         return {
+            "update_id": update_id,
             "message": {
                 "chat": {"id": chat_id, "username": username},
                 "date": timestamp,
-            }
+            },
         }
+
+    def _make_responses(self, *batches):
+        """Costruisce una sequenza di risposte mock: ogni batch è una lista di update,
+        seguita da una risposta vuota per terminare la paginazione."""
+        responses = []
+        for batch in batches:
+            r = MagicMock()
+            r.json.return_value = {"result": batch}
+            responses.append(r)
+        empty = MagicMock()
+        empty.json.return_value = {"result": []}
+        responses.append(empty)
+        return responses
 
     @patch("quiz_bot.requests.get")
     def test_returns_true_on_recent_message(self, mock_get):
-        mock_get.return_value.json.return_value = {
-            "result": [self._make_update(-100123, "test_chat", int(time.time()) - 3600)]
-        }
+        mock_get.side_effect = self._make_responses(
+            [self._make_update(-100123, "test_chat", int(time.time()) - 3600)]
+        )
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
             self.assertTrue(quiz_bot.has_recent_activity())
 
     @patch("quiz_bot.requests.get")
     def test_returns_false_when_no_recent_message(self, mock_get):
-        mock_get.return_value.json.return_value = {
-            "result": [self._make_update(-100123, "test_chat", int(time.time()) - 7 * 3600)]
-        }
+        mock_get.side_effect = self._make_responses(
+            [self._make_update(-100123, "test_chat", int(time.time()) - 7 * 3600)]
+        )
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
             self.assertFalse(quiz_bot.has_recent_activity())
 
@@ -179,11 +193,20 @@ class TestHasRecentActivity(unittest.TestCase):
 
     @patch("quiz_bot.requests.get")
     def test_ignores_messages_from_other_chats(self, mock_get):
-        mock_get.return_value.json.return_value = {
-            "result": [self._make_update(-999, "altro_chat", int(time.time()) - 1)]
-        }
+        mock_get.side_effect = self._make_responses(
+            [self._make_update(-999, "altro_chat", int(time.time()) - 1)]
+        )
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
             self.assertFalse(quiz_bot.has_recent_activity())
+
+    @patch("quiz_bot.requests.get")
+    def test_finds_recent_message_in_second_page(self, mock_get):
+        """Verifica che la paginazione funzioni: il messaggio recente è nel secondo batch."""
+        old = self._make_update(-100123, "test_chat", int(time.time()) - 7 * 3600, update_id=1)
+        recent = self._make_update(-100123, "test_chat", int(time.time()) - 60, update_id=2)
+        mock_get.side_effect = self._make_responses([old], [recent])
+        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
+            self.assertTrue(quiz_bot.has_recent_activity())
 
 
 if __name__ == "__main__":

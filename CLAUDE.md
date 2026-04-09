@@ -22,7 +22,7 @@ python -m unittest test_quiz_bot -v
 
 Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_TOKEN` e `ANTHROPIC_API_KEY`.
 
-`TELEGRAM_ACTIVITY_CHAT_ID` è opzionale: se impostata, il quiz viene saltato se quel gruppo non ha attività nelle ultime 6 ore. Default: `TELEGRAM_CHAT_ID`.
+`TELEGRAM_ACTIVITY_CHAT_ID` è opzionale: se impostata, il quiz viene saltato se quel gruppo non ha attività nelle ultime 4 ore. Default: `TELEGRAM_CHAT_ID`.
 
 ## Workflow GitHub Actions
 
@@ -32,4 +32,4 @@ Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRA
 
 - 75% dei giorni: quiz generico su informatica/programmazione
 - 25% dei giorni: quiz basato su un episodio casuale del feed RSS (trascrizione + script GitHub se disponibile)
-- Se il gruppo di riferimento non ha attività nelle ultime 6 ore, il quiz viene saltato (`exit 0`)
+- Se il gruppo di riferimento non ha attività nelle ultime 4 ore, il quiz viene saltato (`exit 0`)
