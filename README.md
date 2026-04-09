@@ -1,6 +1,6 @@
 <div align="center">
   <img src="https://cdn.pensieriincodice.it/images/pensieriincodice-locandina.png" alt="Logo Progetto" width="150"/>
-  <h1>Pensieri In Codice — Quiz Generator</h1>
+  <h1>Pensieri in codice — Quiz Generator</h1>
   <p>Pubblica automaticamente un quiz giornaliero nel canale Telegram del podcast, generato da Claude AI a partire dagli episodi.</p>
   <p>
     <img src="https://img.shields.io/github/stars/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="GitHub Stars"/>
