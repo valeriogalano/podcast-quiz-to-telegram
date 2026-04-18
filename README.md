@@ -60,8 +60,18 @@ Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse v
 
 ## Installazione e avvio locale
 
+Crea e attiva un ambiente virtuale:
+
 ```bash
-pip install anthropic feedparser requests python-dotenv
+python3 -m venv .venv
+source .venv/bin/activate  # macOS/Linux
+# .venv\Scripts\activate   # Windows
+```
+
+Installa le dipendenze:
+
+```bash
+pip install -r requirements.txt
 ```
 
 Copia il file `.env.example` in `.env` e compila i valori:
