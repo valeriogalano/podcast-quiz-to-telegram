@@ -21,7 +21,7 @@
 
 Ad ogni esecuzione lo script:
 
-1. Verifica che ci sia stata attività recente nel gruppo Telegram di riferimento (configurabile). Se ci sono messaggi nelle ultime **4 ore**, il quiz viene saltato per non interrompere la conversazione.
+1. Verifica che ci sia stata attività recente nel gruppo Telegram di riferimento (configurabile). Se ci sono messaggi all'interno della finestra configurata (default **240 minuti** = 4 ore, modificabile via `TELEGRAM_ACTIVITY_WINDOW_MINUTES`), il quiz viene saltato per non interrompere la conversazione.
 2. Decide casualmente il tipo di quiz da generare:
    - **75% delle volte**: quiz generico — sceglie un tema casuale tra oltre 30 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e chiama Claude Haiku per generarlo.
    - **25% delle volte**: quiz da episodio — scarica il feed RSS, seleziona un episodio casuale, ne estrae la trascrizione e cerca il file script corrispondente nel repo GitHub. Se trova almeno uno dei due contenuti, li passa a Claude Haiku per generare il quiz. Se non trova nulla, ricade sul quiz generico.
@@ -54,6 +54,7 @@ Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse v
 | `GH_SCRIPTS_PATH` | ✓ | Cartella degli script nel repo (es. `scripts/`) |
 | `SCRIPT_EXTENSION` | ✓ | Estensioni dei file script separate da virgola (es. `.json,.yml`) |
 | `TELEGRAM_ACTIVITY_CHAT_ID` |  | Gruppo da monitorare per l'attività (default: `TELEGRAM_CHAT_ID`) |
+| `TELEGRAM_ACTIVITY_WINDOW_MINUTES` |  | Durata in minuti della finestra di attività (default: `240`) |
 
 ---
 

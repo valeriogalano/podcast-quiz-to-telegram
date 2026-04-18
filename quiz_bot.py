@@ -96,40 +96,45 @@ Preferisci domande su comportamenti inattesi, curiosità, errori comuni o concet
 """ + _JSON_SCHEMA
 
 
-def has_recent_activity(hours: int = 4) -> bool:
-    """Ritorna True se c'è stata attività nel gruppo di riferimento nelle ultime `hours` ore."""
-    threshold = time.time() - hours * 3600
+def has_recent_activity(minutes: float | None = None) -> bool:
+    """Ritorna True se c'è stata attività nel gruppo di riferimento negli ultimi `minutes` minuti.
+
+    Usa `getUpdates` con offset negativo: Telegram ritorna gli ultimi N update senza
+    confermarli, così non vengono rimossi dalla coda e restano visibili alle run successive.
+    """
+    if minutes is None:
+        minutes = float(os.environ.get("TELEGRAM_ACTIVITY_WINDOW_MINUTES", "240"))
+    threshold = time.time() - minutes * 60
     activity_id = TELEGRAM_ACTIVITY_CHAT_ID.lstrip("@")
     try:
-        offset = None
-        while True:
-            params = {"limit": 100, "timeout": 0}
-            if offset is not None:
-                params["offset"] = offset
-            resp = requests.get(
-                f"{TELEGRAM_API}/getUpdates",
-                params=params,
-                timeout=10,
-            )
-            resp.raise_for_status()
-            updates = resp.json().get("result", [])
-            if not updates:
-                break
-            for update in updates:
-                msg = update.get("message") or update.get("channel_post")
-                if not msg:
-                    continue
-                chat = msg.get("chat", {})
-                if str(chat.get("id")) == activity_id or chat.get("username") == activity_id:
-                    if msg.get("date", 0) >= threshold:
-                        ts = datetime.datetime.fromtimestamp(msg["date"], tz=datetime.timezone.utc).isoformat()
-                        print(f"Ultimo messaggio rilevato alle: {ts}")
-                        return True
-            offset = updates[-1]["update_id"] + 1
+        resp = requests.get(
+            f"{TELEGRAM_API}/getUpdates",
+            params={"offset": -100, "limit": 100, "timeout": 0},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        updates = resp.json().get("result", [])
+        matched = 0
+        last_ts: float | None = None
+        for update in updates:
+            msg = update.get("message") or update.get("channel_post")
+            if not msg:
+                continue
+            chat = msg.get("chat", {})
+            if str(chat.get("id")) == activity_id or chat.get("username") == activity_id:
+                matched += 1
+                ts = msg.get("date", 0)
+                if last_ts is None or ts > last_ts:
+                    last_ts = ts
+        print(f"getUpdates: {len(updates)} update totali, {matched} per {activity_id}")
+        if last_ts is not None:
+            iso = datetime.datetime.fromtimestamp(last_ts, tz=datetime.timezone.utc).astimezone().isoformat()
+            print(f"Ultimo messaggio rilevato alle: {iso}")
+            return last_ts >= threshold
+        return False
     except Exception as e:
-        print(f"Avviso: impossibile verificare l'attività ({e}). Procedo comunque.", file=sys.stderr)
+        print(f"Avviso: impossibile verificare l'attività ({e}). Salto il quiz per sicurezza.", file=sys.stderr)
         return True
-    return False
 
 
 def fetch_random_episode() -> dict:

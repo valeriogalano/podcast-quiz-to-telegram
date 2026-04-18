@@ -158,30 +158,32 @@ class TestHasRecentActivity(unittest.TestCase):
             },
         }
 
-    def _make_responses(self, *batches):
-        """Costruisce una sequenza di risposte mock: ogni batch è una lista di update,
-        seguita da una risposta vuota per terminare la paginazione."""
-        responses = []
-        for batch in batches:
-            r = MagicMock()
-            r.json.return_value = {"result": batch}
-            responses.append(r)
-        empty = MagicMock()
-        empty.json.return_value = {"result": []}
-        responses.append(empty)
-        return responses
+    def _make_response(self, updates):
+        r = MagicMock()
+        r.json.return_value = {"result": updates}
+        return r
 
     @patch("quiz_bot.requests.get")
     def test_returns_true_on_recent_message(self, mock_get):
-        mock_get.side_effect = self._make_responses(
+        mock_get.return_value = self._make_response(
             [self._make_update(-100123, "test_chat", int(time.time()) - 3600)]
         )
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
             self.assertTrue(quiz_bot.has_recent_activity())
 
     @patch("quiz_bot.requests.get")
+    def test_uses_negative_offset(self, mock_get):
+        """Regressione: offset=-100 serve a non consumare gli update dalla coda."""
+        mock_get.return_value = self._make_response([])
+        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
+            quiz_bot.has_recent_activity()
+        self.assertEqual(mock_get.call_count, 1)
+        params = mock_get.call_args.kwargs["params"]
+        self.assertEqual(params["offset"], -100)
+
+    @patch("quiz_bot.requests.get")
     def test_returns_false_when_no_recent_message(self, mock_get):
-        mock_get.side_effect = self._make_responses(
+        mock_get.return_value = self._make_response(
             [self._make_update(-100123, "test_chat", int(time.time()) - 7 * 3600)]
         )
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
@@ -193,18 +195,38 @@ class TestHasRecentActivity(unittest.TestCase):
 
     @patch("quiz_bot.requests.get")
     def test_ignores_messages_from_other_chats(self, mock_get):
-        mock_get.side_effect = self._make_responses(
+        mock_get.return_value = self._make_response(
             [self._make_update(-999, "altro_chat", int(time.time()) - 1)]
         )
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
             self.assertFalse(quiz_bot.has_recent_activity())
 
     @patch("quiz_bot.requests.get")
-    def test_finds_recent_message_in_second_page(self, mock_get):
-        """Verifica che la paginazione funzioni: il messaggio recente è nel secondo batch."""
+    def test_reads_window_from_env_short(self, mock_get):
+        """Con finestra 30min un messaggio di 60min fa NON è recente."""
+        mock_get.return_value = self._make_response(
+            [self._make_update(-100123, "test_chat", int(time.time()) - 60 * 60)]
+        )
+        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
+             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": "30"}):
+            self.assertFalse(quiz_bot.has_recent_activity())
+
+    @patch("quiz_bot.requests.get")
+    def test_reads_window_from_env_match(self, mock_get):
+        """Con finestra 30min un messaggio di 10min fa è recente."""
+        mock_get.return_value = self._make_response(
+            [self._make_update(-100123, "test_chat", int(time.time()) - 10 * 60)]
+        )
+        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
+             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": "30"}):
+            self.assertTrue(quiz_bot.has_recent_activity())
+
+    @patch("quiz_bot.requests.get")
+    def test_uses_latest_of_multiple_messages(self, mock_get):
+        """Se la coda ha più messaggi, usa il più recente anche se preceduto da uno vecchio."""
         old = self._make_update(-100123, "test_chat", int(time.time()) - 7 * 3600, update_id=1)
         recent = self._make_update(-100123, "test_chat", int(time.time()) - 60, update_id=2)
-        mock_get.side_effect = self._make_responses([old], [recent])
+        mock_get.return_value = self._make_response([old, recent])
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
             self.assertTrue(quiz_bot.has_recent_activity())
 
