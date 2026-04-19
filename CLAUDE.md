@@ -25,7 +25,7 @@ Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRA
 
 `TELEGRAM_ACTIVITY_CHAT_ID` è opzionale: se impostata, il quiz viene saltato se quel gruppo ha avuto attività all'interno della finestra configurata. Default: `TELEGRAM_CHAT_ID`.
 
-`TELEGRAM_ACTIVITY_WINDOW_MINUTES` è opzionale: durata in minuti della finestra di controllo attività. Default: `240` (= 4 ore).
+`TELEGRAM_ACTIVITY_WINDOW_MINUTES` è opzionale: durata in minuti della finestra di controllo attività. Default: `240` (= 4 ore). Variabile assente o stringa vuota sono equivalenti e cadono sul default (così GitHub Actions può iniettare `vars.*` non definite senza rompere il job).
 
 ## Workflow GitHub Actions
 
