@@ -29,10 +29,10 @@ Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRA
 
 ## Workflow GitHub Actions
 
-`quiz.yml` — si esegue ogni giorno alle 09:00 UTC (o manualmente via `workflow_dispatch`). Tutte le variabili d'ambiente vengono passate come GitHub Secrets.
+`quiz.yml` — si esegue ogni ora dalle 08:00 alle 17:00 UTC (cron `0 8-17 * * *`), oppure manualmente via `workflow_dispatch`. A ogni esecuzione `has_recent_activity` decide se pubblicare o saltare. Le variabili d'ambiente sensibili vengono passate come GitHub Secrets, le altre come GitHub Variables.
 
 ## Logica principale
 
-- 75% dei giorni: quiz generico su informatica/programmazione
-- 25% dei giorni: quiz basato su un episodio casuale del feed RSS (trascrizione + script GitHub se disponibile)
+- 75% delle esecuzioni: quiz generico su informatica/programmazione
+- 25% delle esecuzioni: quiz basato su un episodio casuale del feed RSS (trascrizione + script GitHub se disponibile)
 - Se il gruppo di riferimento ha avuto attività nella finestra configurata (default 240 minuti), il quiz viene saltato (`exit 0`)
