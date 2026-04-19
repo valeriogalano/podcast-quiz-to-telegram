@@ -31,6 +31,19 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+def _env_float(name: str, default: float) -> float:
+    """Legge una variabile d'ambiente numerica trattando valore assente o vuoto come default.
+
+    Necessario perché GitHub Actions inietta sempre la chiave anche quando la
+    `vars.*` sorgente non è definita, con il risultato di impostarla a stringa
+    vuota: `os.environ.get(name, default)` in quel caso non cade sul default.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return float(raw)
+
 _JSON_SCHEMA = """\
 Rispondi SOLO con un JSON valido, senza backtick, senza testo aggiuntivo:
 {
@@ -103,7 +116,7 @@ def has_recent_activity(minutes: float | None = None) -> bool:
     confermarli, così non vengono rimossi dalla coda e restano visibili alle run successive.
     """
     if minutes is None:
-        minutes = float(os.environ.get("TELEGRAM_ACTIVITY_WINDOW_MINUTES", "240"))
+        minutes = _env_float("TELEGRAM_ACTIVITY_WINDOW_MINUTES", 240.0)
     threshold = time.time() - minutes * 60
     activity_id = TELEGRAM_ACTIVITY_CHAT_ID.lstrip("@")
     try:

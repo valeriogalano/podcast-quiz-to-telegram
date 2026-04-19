@@ -230,6 +230,45 @@ class TestHasRecentActivity(unittest.TestCase):
         with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
             self.assertTrue(quiz_bot.has_recent_activity())
 
+    @patch("quiz_bot.requests.get")
+    def test_empty_window_env_falls_back_to_default(self, mock_get):
+        """Regressione: TELEGRAM_ACTIVITY_WINDOW_MINUTES="" non deve sollevare ValueError.
+
+        GitHub Actions inietta la variabile anche quando la `vars.*` sorgente
+        è assente, con valore stringa vuota. La lettura deve cadere sul default
+        (240 minuti) invece di tentare `float("")`.
+        """
+        mock_get.return_value = self._make_response(
+            [self._make_update(-100123, "test_chat", int(time.time()) - 60)]
+        )
+        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
+             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": ""}):
+            self.assertTrue(quiz_bot.has_recent_activity())
+
+
+class TestEnvFloat(unittest.TestCase):
+    def test_returns_default_when_unset(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("QB_TEST_VAR", None)
+            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 42.0)
+
+    def test_returns_default_when_empty(self):
+        with patch.dict(os.environ, {"QB_TEST_VAR": ""}):
+            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 42.0)
+
+    def test_returns_default_when_whitespace(self):
+        with patch.dict(os.environ, {"QB_TEST_VAR": "   "}):
+            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 42.0)
+
+    def test_parses_value(self):
+        with patch.dict(os.environ, {"QB_TEST_VAR": "7.5"}):
+            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 7.5)
+
+    def test_raises_on_non_numeric(self):
+        with patch.dict(os.environ, {"QB_TEST_VAR": "abc"}):
+            with self.assertRaises(ValueError):
+                quiz_bot._env_float("QB_TEST_VAR", 42.0)
+
 
 if __name__ == "__main__":
     unittest.main()
