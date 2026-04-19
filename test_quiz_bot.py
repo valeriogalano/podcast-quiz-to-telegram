@@ -231,5 +231,212 @@ class TestHasRecentActivity(unittest.TestCase):
             self.assertTrue(quiz_bot.has_recent_activity())
 
 
+class TestValidateQuiz(unittest.TestCase):
+    def test_valid_quiz_returns_no_errors(self):
+        quiz = {
+            "question": "Domanda breve?",
+            "options": ["A", "B", "C"],
+            "correct_option_ids": [0],
+            "explanation": "Spiegazione breve.",
+        }
+        self.assertEqual(quiz_bot.validate_quiz(quiz), [])
+
+    def test_flags_question_plus_description_over_limit(self):
+        quiz = {
+            "question": "Q" * 200,
+            "description": "D" * 200,
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        errors = quiz_bot.validate_quiz(quiz)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("question+description", errors[0])
+
+    def test_flags_option_over_limit(self):
+        quiz = {
+            "question": "Q",
+            "options": ["ok", "X" * 150],
+            "correct_option_ids": [0],
+        }
+        errors = quiz_bot.validate_quiz(quiz)
+        self.assertTrue(any("opzione 1" in e for e in errors))
+
+    def test_flags_explanation_over_limit(self):
+        quiz = {
+            "question": "Q",
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+            "explanation": "E" * 300,
+        }
+        errors = quiz_bot.validate_quiz(quiz)
+        self.assertTrue(any("explanation" in e for e in errors))
+
+    def test_empty_quiz_returns_no_errors(self):
+        """Nessun campo → nessun limite superato, lista vuota."""
+        self.assertEqual(quiz_bot.validate_quiz({}), [])
+
+
+class TestPrintQuiz(unittest.TestCase):
+    """Smoke test: verifica che print_quiz non sollevi eccezioni sui rami principali."""
+
+    def _quiz(self, **overrides):
+        base = {
+            "question": "Domanda?",
+            "options": ["A", "B", "C"],
+            "correct_option_ids": [1],
+            "explanation": "Spiegazione",
+        }
+        base.update(overrides)
+        return base
+
+    @patch("builtins.print")
+    def test_prints_generic_quiz(self, _):
+        quiz_bot.print_quiz(self._quiz(), episode_ref=None)
+
+    @patch("builtins.print")
+    def test_prints_episode_quiz(self, _):
+        quiz_bot.print_quiz(self._quiz(), episode_ref="Episodio 42")
+
+    @patch("builtins.print")
+    def test_prints_with_description(self, _):
+        quiz_bot.print_quiz(self._quiz(description="print(1+1)"), episode_ref=None)
+
+    @patch("builtins.print")
+    def test_prints_with_index(self, _):
+        quiz_bot.print_quiz(self._quiz(), episode_ref=None, index=3)
+
+
+class TestGenerateQuizContent(unittest.TestCase):
+    """Mockiamo `quiz_bot.call_claude` per evitare chiamate reali all'API Anthropic."""
+
+    def _claude_response(self):
+        return {
+            "question": "Q?",
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+            "explanation": "E",
+        }
+
+    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.random")
+    def test_generic_path_when_random_above_threshold(self, mock_random, mock_claude):
+        mock_random.random.return_value = 0.9
+        mock_random.choice.return_value = "tema test"
+        mock_claude.return_value = self._claude_response()
+
+        with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
+            quiz, episode_ref = quiz_bot.generate_quiz_content()
+
+        self.assertIsNone(episode_ref)
+        self.assertEqual(quiz["question"], "Q?")
+        mock_claude.assert_called_once()
+        # Il system prompt usato deve essere quello generico.
+        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
+
+    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.fetch_github_script", return_value="")
+    @patch("quiz_bot.fetch_random_episode")
+    @patch("quiz_bot.random")
+    def test_episode_path_with_transcript(
+        self, mock_random, mock_fetch_ep, mock_fetch_script, mock_claude
+    ):
+        mock_random.random.return_value = 0.1
+        mock_fetch_ep.return_value = {
+            "title": "Titolo ep",
+            "summary": "trascrizione dall'episodio",
+        }
+        mock_claude.return_value = self._claude_response()
+
+        with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
+            quiz, episode_ref = quiz_bot.generate_quiz_content()
+
+        self.assertEqual(episode_ref, "Titolo ep")
+        self.assertEqual(quiz["question"], "Q?")
+        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._EPISODE_SYSTEM)
+
+    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.fetch_random_episode", side_effect=RuntimeError("feed vuoto"))
+    @patch("quiz_bot.random")
+    def test_episode_feed_failure_falls_back_to_generic(
+        self, mock_random, mock_fetch_ep, mock_claude
+    ):
+        mock_random.random.return_value = 0.1
+        mock_random.choice.return_value = "tema test"
+        mock_claude.return_value = self._claude_response()
+
+        with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
+            quiz, episode_ref = quiz_bot.generate_quiz_content()
+
+        self.assertIsNone(episode_ref)
+        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
+
+    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.fetch_github_script", return_value="")
+    @patch("quiz_bot.fetch_random_episode")
+    @patch("quiz_bot.random")
+    def test_episode_without_content_falls_back_to_generic(
+        self, mock_random, mock_fetch_ep, mock_fetch_script, mock_claude
+    ):
+        mock_random.random.return_value = 0.1
+        mock_random.choice.return_value = "tema test"
+        # Episodio senza trascrizione né summary → fallback generico.
+        mock_fetch_ep.return_value = {"title": "Titolo ep"}
+        mock_claude.return_value = self._claude_response()
+
+        with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
+            quiz, episode_ref = quiz_bot.generate_quiz_content()
+
+        self.assertIsNone(episode_ref)
+        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
+
+
+class TestGenerateValidQuiz(unittest.TestCase):
+    """Copre il loop di retry senza chiamare call_claude (stub diretto di generate_quiz_content)."""
+
+    def _valid_quiz(self):
+        return {
+            "question": "Q?",
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+            "explanation": "E",
+        }
+
+    @patch("quiz_bot.print_quiz")
+    @patch("quiz_bot.generate_quiz_content")
+    def test_returns_on_first_valid_attempt(self, mock_gen, _):
+        mock_gen.return_value = (self._valid_quiz(), None)
+        quiz, episode_ref = quiz_bot.generate_valid_quiz()
+        self.assertEqual(quiz["question"], "Q?")
+        self.assertIsNone(episode_ref)
+        self.assertEqual(mock_gen.call_count, 1)
+
+    @patch("quiz_bot.print_quiz")
+    @patch("quiz_bot.generate_quiz_content")
+    def test_retries_until_valid(self, mock_gen, _):
+        invalid = {
+            "question": "Q" * 400,  # oltre limite 300
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), "Ep 1")]
+        quiz, episode_ref = quiz_bot.generate_valid_quiz()
+        self.assertEqual(quiz["question"], "Q?")
+        self.assertEqual(episode_ref, "Ep 1")
+        self.assertEqual(mock_gen.call_count, 2)
+
+    @patch("quiz_bot.print_quiz")
+    @patch("quiz_bot.generate_quiz_content")
+    def test_exits_after_max_retries(self, mock_gen, _):
+        invalid = {
+            "question": "Q" * 400,
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        mock_gen.return_value = (invalid, None)
+        with self.assertRaises(SystemExit):
+            quiz_bot.generate_valid_quiz()
+        self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES)
+
+
 if __name__ == "__main__":
     unittest.main()
