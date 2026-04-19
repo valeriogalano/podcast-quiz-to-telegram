@@ -5,7 +5,9 @@ Bot Telegram che pubblica quotidianamente un quiz basato sugli episodi del podca
 ## Setup locale
 
 ```bash
-pip install anthropic feedparser requests python-dotenv
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 cp .env.example .env   # compila i valori reali
 python quiz_bot.py
 ```
@@ -13,6 +15,7 @@ python quiz_bot.py
 ## Test
 
 ```bash
+source .venv/bin/activate
 python -m pytest test_quiz_bot.py -v
 ```
 
