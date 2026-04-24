@@ -166,9 +166,10 @@ class TestHasRecentActivity(unittest.TestCase):
     @patch("quiz_bot.requests.get")
     def test_returns_true_on_recent_message(self, mock_get):
         mock_get.return_value = self._make_response(
-            [self._make_update(-100123, "test_chat", int(time.time()) - 3600)]
+            [self._make_update(-100123, "test_chat", int(time.time()) - 1800)]
         )
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
+        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
+             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": "240"}):
             self.assertTrue(quiz_bot.has_recent_activity())
 
     @patch("quiz_bot.requests.get")

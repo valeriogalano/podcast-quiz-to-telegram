@@ -2,7 +2,7 @@ name: Daily Quiz
 
 on:
   schedule:
-    - cron: "0 8-17 * * *"
+    - cron: "0 11,15 * * *"
   workflow_dispatch:
 
 jobs:
