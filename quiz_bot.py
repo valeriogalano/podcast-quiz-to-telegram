@@ -13,6 +13,8 @@ except ImportError:
     pass
 
 import anthropic
+from google import genai
+from google.genai import types as genai_types
 import feedparser
 import requests
 
@@ -25,7 +27,9 @@ SCRIPT_EXTENSIONS = tuple(
 )
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 TELEGRAM_ACTIVITY_CHAT_ID = os.environ.get("TELEGRAM_ACTIVITY_CHAT_ID", TELEGRAM_CHAT_ID)
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+QUIZ_PROVIDER = os.environ.get("QUIZ_PROVIDER", "google").lower()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
@@ -197,8 +201,9 @@ def fetch_github_script(title: str) -> str:
 
 
 def call_claude(system: str, user: str) -> dict:
-    message = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY).messages.create(
-        model="claude-haiku-4-5-20251001",
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model="claude-3-5-haiku-20241022",
         max_tokens=1000,
         system=system,
         messages=[{"role": "user", "content": user}],
@@ -210,6 +215,32 @@ def call_claude(system: str, user: str) -> dict:
         return json.loads(raw)
     except json.JSONDecodeError as e:
         print(f"Errore: risposta di Claude non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def call_ai(system: str, user: str) -> dict:
+    if QUIZ_PROVIDER == "anthropic":
+        return call_claude(system, user)
+    return call_gemini(system, user)
+
+
+def call_gemini(system: str, user: str) -> dict:
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        config=genai_types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=1000,
+        ),
+        contents=user,
+    )
+    raw = response.text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"Errore: risposta di Gemini non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -257,12 +288,12 @@ def generate_quiz_content() -> tuple[dict, str | None]:
                     f"SCRIPT:\n{script[:2000]}" if script else "",
                 ]))
                 print("Genero il quiz basato sull'episodio...")
-                return call_claude(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}"), title
+                return call_ai(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}"), title
             print("Nessun contenuto episodio disponibile, passo al quiz generico...")
 
     topic = random.choice(_GENERIC_TOPICS)
     print(f"Genero un quiz generico (tema: {topic})...")
-    return call_claude(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}"), None
+    return call_ai(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}"), None
 
 
 def validate_quiz(quiz: dict) -> list[str]:
