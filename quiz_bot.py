@@ -212,10 +212,13 @@ def call_claude(system: str, user: str) -> dict:
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
     except json.JSONDecodeError as e:
         print(f"Errore: risposta di Claude non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
         sys.exit(1)
+    explanation = result.get("explanation", "")
+    result["explanation"] = f"{explanation}\n\n_Generato da claude-3-5-haiku-20241022_".strip()
+    return result
 
 
 def call_ai(system: str, user: str) -> dict:
@@ -238,10 +241,13 @@ def call_gemini(system: str, user: str) -> dict:
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
     except json.JSONDecodeError as e:
         print(f"Errore: risposta di Gemini non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
         sys.exit(1)
+    explanation = result.get("explanation", "")
+    result["explanation"] = f"{explanation}\n\n_Generato da gemini-2.5-flash_".strip()
+    return result
 
 
 def send_poll(quiz: dict) -> dict:

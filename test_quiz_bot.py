@@ -102,6 +102,7 @@ class TestCallClaude(unittest.TestCase):
         )
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
+        self.assertIn("claude-3-5-haiku-20241022", result["explanation"])
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_strips_code_fences(self, mock_anthropic):
@@ -110,6 +111,7 @@ class TestCallClaude(unittest.TestCase):
         mock_anthropic.return_value.messages.create.return_value = self._make_message(wrapped)
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
+        self.assertIn("claude-3-5-haiku-20241022", result["explanation"])
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_exits_on_invalid_json(self, mock_anthropic):
@@ -360,6 +362,7 @@ class TestCallGemini(unittest.TestCase):
         )
         result = quiz_bot.call_gemini("system", "user")
         self.assertEqual(result["question"], "?")
+        self.assertIn("gemini-2.5-flash", result["explanation"])
 
     @patch("quiz_bot.genai.Client")
     def test_strips_code_fences(self, mock_client):
@@ -368,6 +371,7 @@ class TestCallGemini(unittest.TestCase):
         mock_client.return_value.models.generate_content.return_value = self._make_response(wrapped)
         result = quiz_bot.call_gemini("system", "user")
         self.assertEqual(result["question"], "?")
+        self.assertIn("gemini-2.5-flash", result["explanation"])
 
     @patch("quiz_bot.genai.Client")
     def test_exits_on_invalid_json(self, mock_client):
