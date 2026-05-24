@@ -1,4 +1,5 @@
 anthropic
+google-genai
 feedparser
 requests
 python-dotenv

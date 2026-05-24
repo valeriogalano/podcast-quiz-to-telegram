@@ -46,13 +46,15 @@ Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse v
 
 | Variabile | Obbligatoria | Descrizione |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | ✓ | Chiave API di Anthropic |
 | `TELEGRAM_BOT_TOKEN` | ✓ | Token del bot Telegram |
 | `TELEGRAM_CHAT_ID` | ✓ | Chat ID o username del canale/gruppo dove pubblicare il quiz |
 | `FEED_RSS_URL` | ✓ | URL del feed RSS del podcast |
 | `GH_REPO` | ✓ | Repo GitHub degli script (es. `utente/repo`) |
 | `GH_SCRIPTS_PATH` | ✓ | Cartella degli script nel repo (es. `scripts/`) |
 | `SCRIPT_EXTENSION` | ✓ | Estensioni dei file script separate da virgola (es. `.json,.yml`) |
+| `GOOGLE_API_KEY` | se usi Gemini | Chiave API di Google (da [AI Studio](https://aistudio.google.com/)) |
+| `ANTHROPIC_API_KEY` | se usi Claude | Chiave API di Anthropic |
+| `QUIZ_PROVIDER` |  | Provider AI da usare: `google` (default) oppure `anthropic` |
 | `TELEGRAM_ACTIVITY_CHAT_ID` |  | Gruppo da monitorare per l'attività (default: `TELEGRAM_CHAT_ID`) |
 | `TELEGRAM_ACTIVITY_WINDOW_MINUTES` |  | Durata in minuti della finestra di attività (default: `240`) |
 

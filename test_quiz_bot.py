@@ -102,6 +102,7 @@ class TestCallClaude(unittest.TestCase):
         )
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
+        self.assertIn("claude-3-5-haiku-20241022", result["explanation"])
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_strips_code_fences(self, mock_anthropic):
@@ -110,6 +111,7 @@ class TestCallClaude(unittest.TestCase):
         mock_anthropic.return_value.messages.create.return_value = self._make_message(wrapped)
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
+        self.assertIn("claude-3-5-haiku-20241022", result["explanation"])
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_exits_on_invalid_json(self, mock_anthropic):
@@ -346,8 +348,59 @@ class TestPrintQuiz(unittest.TestCase):
         quiz_bot.print_quiz(self._quiz(), episode_ref=None, index=3)
 
 
+class TestCallGemini(unittest.TestCase):
+    def _make_response(self, text):
+        resp = MagicMock()
+        resp.text = text
+        return resp
+
+    @patch("quiz_bot.genai.Client")
+    def test_parses_valid_json(self, mock_client):
+        payload = {"question": "?", "options": ["a", "b"], "correct_option_ids": [0]}
+        mock_client.return_value.models.generate_content.return_value = self._make_response(
+            json.dumps(payload)
+        )
+        result = quiz_bot.call_gemini("system", "user")
+        self.assertEqual(result["question"], "?")
+        self.assertIn("gemini-2.5-flash", result["explanation"])
+
+    @patch("quiz_bot.genai.Client")
+    def test_strips_code_fences(self, mock_client):
+        payload = {"question": "?", "options": ["a", "b"], "correct_option_ids": [0]}
+        wrapped = f"```json\n{json.dumps(payload)}\n```"
+        mock_client.return_value.models.generate_content.return_value = self._make_response(wrapped)
+        result = quiz_bot.call_gemini("system", "user")
+        self.assertEqual(result["question"], "?")
+        self.assertIn("gemini-2.5-flash", result["explanation"])
+
+    @patch("quiz_bot.genai.Client")
+    def test_exits_on_invalid_json(self, mock_client):
+        mock_client.return_value.models.generate_content.return_value = self._make_response("non è json")
+        with self.assertRaises(SystemExit):
+            quiz_bot.call_gemini("system", "user")
+
+
+class TestCallAi(unittest.TestCase):
+    def _response(self):
+        return {"question": "?", "options": ["a", "b"], "correct_option_ids": [0]}
+
+    @patch("quiz_bot.call_gemini")
+    def test_routes_to_gemini_by_default(self, mock_gemini):
+        mock_gemini.return_value = self._response()
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
+            quiz_bot.call_ai("system", "user")
+        mock_gemini.assert_called_once_with("system", "user")
+
+    @patch("quiz_bot.call_claude")
+    def test_routes_to_claude_when_configured(self, mock_claude):
+        mock_claude.return_value = self._response()
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "anthropic"):
+            quiz_bot.call_ai("system", "user")
+        mock_claude.assert_called_once_with("system", "user")
+
+
 class TestGenerateQuizContent(unittest.TestCase):
-    """Mockiamo `quiz_bot.call_claude` per evitare chiamate reali all'API Anthropic."""
+    """Mockiamo `quiz_bot.call_ai` per evitare chiamate reali alle API."""
 
     def _claude_response(self):
         return {
@@ -357,77 +410,77 @@ class TestGenerateQuizContent(unittest.TestCase):
             "explanation": "E",
         }
 
-    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.call_ai")
     @patch("quiz_bot.random")
-    def test_generic_path_when_random_above_threshold(self, mock_random, mock_claude):
+    def test_generic_path_when_random_above_threshold(self, mock_random, mock_ai):
         mock_random.random.return_value = 0.9
         mock_random.choice.return_value = "tema test"
-        mock_claude.return_value = self._claude_response()
+        mock_ai.return_value = self._claude_response()
 
         with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
             quiz, episode_ref = quiz_bot.generate_quiz_content()
 
         self.assertIsNone(episode_ref)
         self.assertEqual(quiz["question"], "Q?")
-        mock_claude.assert_called_once()
+        mock_ai.assert_called_once()
         # Il system prompt usato deve essere quello generico.
-        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
+        self.assertEqual(mock_ai.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
 
-    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.call_ai")
     @patch("quiz_bot.fetch_github_script", return_value="")
     @patch("quiz_bot.fetch_random_episode")
     @patch("quiz_bot.random")
     def test_episode_path_with_transcript(
-        self, mock_random, mock_fetch_ep, mock_fetch_script, mock_claude
+        self, mock_random, mock_fetch_ep, mock_fetch_script, mock_ai
     ):
         mock_random.random.return_value = 0.1
         mock_fetch_ep.return_value = {
             "title": "Titolo ep",
             "summary": "trascrizione dall'episodio",
         }
-        mock_claude.return_value = self._claude_response()
+        mock_ai.return_value = self._claude_response()
 
         with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
             quiz, episode_ref = quiz_bot.generate_quiz_content()
 
         self.assertEqual(episode_ref, "Titolo ep")
         self.assertEqual(quiz["question"], "Q?")
-        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._EPISODE_SYSTEM)
+        self.assertEqual(mock_ai.call_args.args[0], quiz_bot._EPISODE_SYSTEM)
 
-    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.call_ai")
     @patch("quiz_bot.fetch_random_episode", side_effect=RuntimeError("feed vuoto"))
     @patch("quiz_bot.random")
     def test_episode_feed_failure_falls_back_to_generic(
-        self, mock_random, mock_fetch_ep, mock_claude
+        self, mock_random, mock_fetch_ep, mock_ai
     ):
         mock_random.random.return_value = 0.1
         mock_random.choice.return_value = "tema test"
-        mock_claude.return_value = self._claude_response()
+        mock_ai.return_value = self._claude_response()
 
         with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
             quiz, episode_ref = quiz_bot.generate_quiz_content()
 
         self.assertIsNone(episode_ref)
-        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
+        self.assertEqual(mock_ai.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
 
-    @patch("quiz_bot.call_claude")
+    @patch("quiz_bot.call_ai")
     @patch("quiz_bot.fetch_github_script", return_value="")
     @patch("quiz_bot.fetch_random_episode")
     @patch("quiz_bot.random")
     def test_episode_without_content_falls_back_to_generic(
-        self, mock_random, mock_fetch_ep, mock_fetch_script, mock_claude
+        self, mock_random, mock_fetch_ep, mock_fetch_script, mock_ai
     ):
         mock_random.random.return_value = 0.1
         mock_random.choice.return_value = "tema test"
         # Episodio senza trascrizione né summary → fallback generico.
         mock_fetch_ep.return_value = {"title": "Titolo ep"}
-        mock_claude.return_value = self._claude_response()
+        mock_ai.return_value = self._claude_response()
 
         with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
             quiz, episode_ref = quiz_bot.generate_quiz_content()
 
         self.assertIsNone(episode_ref)
-        self.assertEqual(mock_claude.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
+        self.assertEqual(mock_ai.call_args.args[0], quiz_bot._GENERIC_SYSTEM)
 
 
 class TestGenerateValidQuiz(unittest.TestCase):
