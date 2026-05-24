@@ -216,8 +216,6 @@ def call_claude(system: str, user: str) -> dict:
     except json.JSONDecodeError as e:
         print(f"Errore: risposta di Claude non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
         sys.exit(1)
-    explanation = result.get("explanation", "")
-    result["explanation"] = f"{explanation}\n\n_Generato da claude-3-5-haiku-20241022_".strip()
     return result
 
 
@@ -245,8 +243,6 @@ def call_gemini(system: str, user: str) -> dict:
     except json.JSONDecodeError as e:
         print(f"Errore: risposta di Gemini non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
         sys.exit(1)
-    explanation = result.get("explanation", "")
-    result["explanation"] = f"{explanation}\n\n_Generato da gemini-2.5-flash_".strip()
     return result
 
 
