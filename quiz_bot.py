@@ -233,7 +233,7 @@ def call_gemini(system: str, user: str) -> dict:
         model="gemini-2.5-flash",
         config=genai_types.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=1000,
+            max_output_tokens=4096,
         ),
         contents=user,
     )
