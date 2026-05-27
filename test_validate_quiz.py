@@ -58,10 +58,10 @@ class TestValidateQuiz:
 
     def test_description_with_model_footer(self):
         """Il footer di trasparenza sul modello concorre al limite della description."""
-        # 180 char + "\n\n— generato con claude-3-5-haiku-20241022" ≈ 222 > 200
+        # 180 char + "\n\n— generato con claude-haiku-4-5" ≈ 222 > 200
         quiz = self._make_quiz(
             description="d" * 180,
-            model="claude-3-5-haiku-20241022",
+            model="claude-haiku-4-5",
         )
         errors = validate_quiz(quiz)
         assert any("description" in e for e in errors)

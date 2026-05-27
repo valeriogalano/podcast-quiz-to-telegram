@@ -28,7 +28,7 @@ Ad ogni esecuzione lo script:
 3. Valida il quiz rispetto ai limiti dell'API Telegram (domanda ≤ 300 caratteri, descrizione ≤ 200 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **3 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
 4. Stampa il contenuto del quiz nei log (utile per il debug) e pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con:
    - eventuale snippet/contesto nel campo `description` nativo (Bot API 9.0)
-   - footer di trasparenza che indica il modello AI usato per generarlo (es. `— generato con claude-3-5-haiku-20241022`)
+   - footer di trasparenza che indica il modello AI usato per generarlo (es. `— generato con claude-haiku-4-5`)
    - supporto per **più risposte corrette** quando appropriato (con `allows_multiple_answers`)
    - risultati nascosti fino alla chiusura del poll (`hide_results_until_closes`), per non spoilerare i voti ai late voters
    - spiegazione visibile dopo aver risposto e apertura di 24 ore
@@ -194,7 +194,7 @@ Limiti imposti dall'API Telegram (validati a runtime, con rigenerazione automati
 
 ## Trasparenza
 
-I quiz pubblicati nel canale sono **generati automaticamente da un modello AI** (Claude di Anthropic oppure Gemini di Google, in base alla configurazione di `QUIZ_PROVIDER`), sulla base delle trascrizioni e degli script degli episodi. Per rendere visibile la provenienza, **ogni quiz mostra in calce alla descrizione il nome del modello specifico usato per generarlo** (es. `— generato con claude-3-5-haiku-20241022`).
+I quiz pubblicati nel canale sono **generati automaticamente da un modello AI** (Claude di Anthropic oppure Gemini di Google, in base alla configurazione di `QUIZ_PROVIDER`), sulla base delle trascrizioni e degli script degli episodi. Per rendere visibile la provenienza, **ogni quiz mostra in calce alla descrizione il nome del modello specifico usato per generarlo** (es. `— generato con claude-haiku-4-5`).
 
 Nonostante le istruzioni mirate, le risposte potrebbero contenere imprecisioni o errori. Per qualsiasi dubbio, fai sempre riferimento alle fonti originali degli episodi.
 

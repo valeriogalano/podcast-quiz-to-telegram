@@ -104,7 +104,7 @@ class TestCallClaude(unittest.TestCase):
         self.assertEqual(result["question"], "?")
         # Il modello viene iniettato nel dict per essere poi mostrato nella
         # description del poll (trasparenza sulla provenienza del quiz).
-        self.assertEqual(result["model"], "claude-3-5-haiku-20241022")
+        self.assertEqual(result["model"], "claude-haiku-4-5")
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_strips_code_fences(self, mock_anthropic):
@@ -113,7 +113,7 @@ class TestCallClaude(unittest.TestCase):
         mock_anthropic.return_value.messages.create.return_value = self._make_message(wrapped)
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertEqual(result["model"], "claude-3-5-haiku-20241022")
+        self.assertEqual(result["model"], "claude-haiku-4-5")
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_exits_on_invalid_json(self, mock_anthropic):
@@ -170,11 +170,11 @@ class TestSendPoll(unittest.TestCase):
             "question": "Q?",
             "options": ["A", "B"],
             "correct_option_ids": [0],
-            "model": "claude-3-5-haiku-20241022",
+            "model": "claude-haiku-4-5",
         }
         quiz_bot.send_poll(quiz)
         payload = mock_post.call_args.kwargs["json"]
-        self.assertIn("claude-3-5-haiku-20241022", payload["description"])
+        self.assertIn("claude-haiku-4-5", payload["description"])
         self.assertIn("generato con", payload["description"])
 
     @patch("quiz_bot.requests.post")
@@ -387,12 +387,12 @@ class TestValidateQuiz(unittest.TestCase):
     def test_description_with_model_footer_counted(self):
         """Il footer di trasparenza sul modello viene incluso nella
         misurazione della description per evitare sforamenti runtime."""
-        # description 180 + footer "\n\n— generato con claude-3-5-haiku-20241022"
+        # description 180 + footer "\n\n— generato con claude-haiku-4-5"
         # ≈ 180 + 42 = 222 > 200
         quiz = {
             "question": "Q",
             "description": "D" * 180,
-            "model": "claude-3-5-haiku-20241022",
+            "model": "claude-haiku-4-5",
             "options": ["A", "B"],
             "correct_option_ids": [0],
         }
