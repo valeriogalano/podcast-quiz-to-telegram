@@ -33,6 +33,22 @@ QUIZ_PROVIDER = os.environ.get("QUIZ_PROVIDER", "google").lower()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+
+# Identificatori dei modelli AI usati per generare i quiz. Vengono propagati in
+# `quiz["model"]` e mostrati nella `description` del poll su Telegram per
+# trasparenza verso il pubblico del canale.
+# Cfr. https://docs.anthropic.com/en/docs/about-claude/models/overview
+# `claude-haiku-4-5` è l'alias e attualmente risolve a `claude-haiku-4-5-20251001`.
+# Il precedente `claude-3-5-haiku-20241022` è stato deprecato il 19 feb 2026.
+_CLAUDE_MODEL = "claude-haiku-4-5"
+_GEMINI_MODEL = "gemini-2.5-flash"
+
+# Limiti dell'API Telegram Bot per i poll di tipo quiz.
+# Cfr. https://core.telegram.org/bots/api#sendpoll
+_TELEGRAM_QUESTION_MAX = 300
+_TELEGRAM_DESCRIPTION_MAX = 200
+_TELEGRAM_OPTION_MAX = 100
+_TELEGRAM_EXPLANATION_MAX = 200
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -52,12 +68,14 @@ _JSON_SCHEMA = """\
 Rispondi SOLO con un JSON valido, senza backtick, senza testo aggiuntivo:
 {
   "question": "testo della domanda (max 300 caratteri)",
-  "description": "snippet di codice o contesto in monospace (max 200 caratteri, ometti se non necessario)",
+  "description": "snippet di codice o contesto opzionale (max 140 caratteri: i restanti caratteri della description del poll Telegram sono riservati al footer di trasparenza sul modello)",
   "options": ["opzione A", "opzione B", "opzione C"],
   "correct_option_ids": [0],
-  "explanation": "spiegazione breve della risposta corretta (max 200 caratteri)"
+  "explanation": "spiegazione MOLTO BREVE della risposta corretta — massimo assoluto 200 caratteri, idealmente 150. Conta ogni lettera, spazio e segno di punteggiatura. Una o due frasi essenziali."
 }
-correct_option_ids è una lista di indici 0-based. Il numero di opzioni deve essere tra 2 e 6, scegli quello più adatto alla domanda. Domande concrete e specifiche, non generiche."""
+correct_option_ids è una lista di indici 0-based delle risposte corrette: usa UN solo indice per quiz a risposta singola, oppure 2-3 indici per quiz a risposta multipla (in tal caso formula la domanda in modo che sia chiaro che più risposte sono corrette, es. "Quali di queste affermazioni sono vere?"). Il numero di opzioni deve essere tra 2 e 6, scegli quello più adatto alla domanda. Domande concrete e specifiche, non generiche. Ometti `description` se non è necessaria.
+
+ATTENZIONE LIMITI: il sistema rifiuta il quiz se la `explanation` supera 200 caratteri, quindi sii sintetico. Meglio una spiegazione di 120 caratteri che chiara ma incompleta, piuttosto che 220 che debordi."""
 
 _GENERIC_TOPICS = [
     "storia dell'informatica: personaggi, invenzioni, aneddoti",
@@ -203,7 +221,7 @@ def fetch_github_script(title: str) -> str:
 def call_claude(system: str, user: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
-        model="claude-3-5-haiku-20241022",
+        model=_CLAUDE_MODEL,
         max_tokens=1000,
         system=system,
         messages=[{"role": "user", "content": user}],
@@ -216,6 +234,7 @@ def call_claude(system: str, user: str) -> dict:
     except json.JSONDecodeError as e:
         print(f"Errore: risposta di Claude non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
         sys.exit(1)
+    result["model"] = _CLAUDE_MODEL
     return result
 
 
@@ -228,7 +247,7 @@ def call_ai(system: str, user: str) -> dict:
 def call_gemini(system: str, user: str) -> dict:
     client = genai.Client(api_key=GOOGLE_API_KEY)
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=_GEMINI_MODEL,
         config=genai_types.GenerateContentConfig(
             system_instruction=system,
             max_output_tokens=4096,
@@ -243,26 +262,58 @@ def call_gemini(system: str, user: str) -> dict:
     except json.JSONDecodeError as e:
         print(f"Errore: risposta di Gemini non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
         sys.exit(1)
+    result["model"] = _GEMINI_MODEL
     return result
 
 
-def send_poll(quiz: dict) -> dict:
-    question = quiz["question"]
+def build_poll_description(quiz: dict) -> str:
+    """Costruisce il valore del campo `description` del poll Telegram.
+
+    Combina (in ordine):
+    - l'eventuale `description` del quiz (snippet di codice, contesto)
+    - un footer di trasparenza che indica il modello AI usato per generarlo
+
+    Ritorna stringa vuota se non c'è nulla da mostrare. Estratta come funzione
+    per essere riusata da `validate_quiz` (così la convalida controlla la stessa
+    stringa che verrà effettivamente inviata a Telegram).
+    """
+    parts: list[str] = []
     if quiz.get("description"):
-        question = f"{question}\n\n{quiz['description']}"
+        parts.append(quiz["description"])
+    if quiz.get("model"):
+        parts.append(f"— generato con {quiz['model']}")
+    return "\n\n".join(parts)
+
+
+def send_poll(quiz: dict) -> dict:
+    correct_ids = quiz["correct_option_ids"]
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "question": quiz["question"],
+        "options": quiz["options"],
+        "type": "quiz",
+        # Bot API 9.0 (apr 2025): correct_option_id (sing.) è deprecato; ora
+        # i quiz supportano più risposte corrette tramite correct_option_ids.
+        "correct_option_ids": correct_ids,
+        "explanation": quiz.get("explanation", ""),
+        "shuffle_options": True,
+        "is_anonymous": True,
+        "open_period": 86400,
+        # Bot API 9.0: nasconde i risultati finché il poll non chiude, così chi
+        # vota dopo non vede già le scelte degli altri.
+        "hide_results_until_closes": True,
+    }
+    description = build_poll_description(quiz)
+    if description:
+        # Bot API 9.0: campo `description` nativo, separato dalla `question`,
+        # con budget di 200 caratteri indipendente dai 300 della domanda.
+        payload["description"] = description
+    if len(correct_ids) > 1:
+        # Bot API 9.0: i quiz multi-risposta richiedono allows_multiple_answers.
+        payload["allows_multiple_answers"] = True
     resp = requests.post(
         f"{TELEGRAM_API}/sendPoll",
-        json={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "question": question,
-            "options": quiz["options"],
-            "type": "quiz",
-            "correct_option_id": quiz["correct_option_ids"][0],
-            "explanation": quiz.get("explanation", ""),
-            "shuffle_options": True,
-            "is_anonymous": True,
-            "open_period": 86400,
-        },
+        json=payload,
         timeout=10,
     )
     resp.raise_for_status()
@@ -302,20 +353,32 @@ def validate_quiz(quiz: dict) -> list[str]:
     """Controlla i limiti Telegram. Ritorna lista di errori, vuota se valido."""
     errors = []
     question = quiz.get("question", "")
-    description = quiz.get("description", "")
-    full_question = f"{question}\n\n{description}" if description else question
-    if len(full_question) > 300:
-        errors.append(f"question+description troppo lunga: {len(full_question)}/300 caratteri")
+    if len(question) > _TELEGRAM_QUESTION_MAX:
+        errors.append(
+            f"question troppo lunga: {len(question)}/{_TELEGRAM_QUESTION_MAX} caratteri"
+        )
+    # La description del poll include lo snippet del quiz + il footer di
+    # trasparenza sul modello. Controlliamo la stringa finale che verrà inviata
+    # a Telegram, non solo `quiz["description"]`.
+    description = build_poll_description(quiz)
+    if len(description) > _TELEGRAM_DESCRIPTION_MAX:
+        errors.append(
+            f"description troppo lunga: {len(description)}/{_TELEGRAM_DESCRIPTION_MAX} caratteri"
+        )
     for i, opt in enumerate(quiz.get("options", [])):
-        if len(opt) > 100:
-            errors.append(f"opzione {i} troppo lunga: {len(opt)}/100 caratteri")
+        if len(opt) > _TELEGRAM_OPTION_MAX:
+            errors.append(
+                f"opzione {i} troppo lunga: {len(opt)}/{_TELEGRAM_OPTION_MAX} caratteri"
+            )
     explanation = quiz.get("explanation", "")
-    if len(explanation) > 200:
-        errors.append(f"explanation troppo lunga: {len(explanation)}/200 caratteri")
+    if len(explanation) > _TELEGRAM_EXPLANATION_MAX:
+        errors.append(
+            f"explanation troppo lunga: {len(explanation)}/{_TELEGRAM_EXPLANATION_MAX} caratteri"
+        )
     return errors
 
 
-_MAX_QUIZ_RETRIES = 3
+_MAX_QUIZ_RETRIES = 5
 
 
 def generate_valid_quiz() -> tuple[dict, str | None]:

@@ -102,7 +102,9 @@ class TestCallClaude(unittest.TestCase):
         )
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertIn("claude-3-5-haiku-20241022", result["explanation"])
+        # Il modello viene iniettato nel dict per essere poi mostrato nella
+        # description del poll (trasparenza sulla provenienza del quiz).
+        self.assertEqual(result["model"], "claude-haiku-4-5")
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_strips_code_fences(self, mock_anthropic):
@@ -111,7 +113,7 @@ class TestCallClaude(unittest.TestCase):
         mock_anthropic.return_value.messages.create.return_value = self._make_message(wrapped)
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertIn("claude-3-5-haiku-20241022", result["explanation"])
+        self.assertEqual(result["model"], "claude-haiku-4-5")
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_exits_on_invalid_json(self, mock_anthropic):
@@ -134,10 +136,18 @@ class TestSendPoll(unittest.TestCase):
         self.assertEqual(result["result"]["message_id"], 42)
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload["question"], "Domanda?")
-        self.assertEqual(payload["correct_option_id"], 1)
+        # Bot API 9.0: correct_option_ids (plurale) sostituisce il deprecato
+        # correct_option_id e accetta una lista.
+        self.assertEqual(payload["correct_option_ids"], [1])
+        self.assertNotIn("correct_option_id", payload)
+        # Bot API 9.0: hide_results_until_closes attivo di default per non
+        # spoilerare i voti ai late voters.
+        self.assertTrue(payload["hide_results_until_closes"])
 
     @patch("quiz_bot.requests.post")
-    def test_appends_description_to_question(self, mock_post):
+    def test_description_goes_to_native_field(self, mock_post):
+        """La description del quiz NON va più concatenata nella question, ma
+        nel campo `description` nativo introdotto in Bot API 9.0."""
         mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
         quiz = {
             "question": "Cosa stampa?",
@@ -147,7 +157,67 @@ class TestSendPoll(unittest.TestCase):
         }
         quiz_bot.send_poll(quiz)
         payload = mock_post.call_args.kwargs["json"]
-        self.assertIn("print(1+1)", payload["question"])
+        self.assertEqual(payload["question"], "Cosa stampa?")
+        self.assertNotIn("print(1+1)", payload["question"])
+        self.assertIn("print(1+1)", payload["description"])
+
+    @patch("quiz_bot.requests.post")
+    def test_model_footer_in_description(self, mock_post):
+        """Quando il quiz ha `model`, viene aggiunto in coda alla description
+        come footer di trasparenza."""
+        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
+        quiz = {
+            "question": "Q?",
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+            "model": "claude-haiku-4-5",
+        }
+        quiz_bot.send_poll(quiz)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIn("claude-haiku-4-5", payload["description"])
+        self.assertIn("generato con", payload["description"])
+
+    @patch("quiz_bot.requests.post")
+    def test_no_description_field_when_empty(self, mock_post):
+        """Se non c'è né description né model, la chiave `description` non
+        viene inclusa nel payload (Telegram rifiuta stringhe vuote)."""
+        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
+        quiz = {
+            "question": "Q?",
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        quiz_bot.send_poll(quiz)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertNotIn("description", payload)
+
+    @patch("quiz_bot.requests.post")
+    def test_multi_correct_enables_multiple_answers(self, mock_post):
+        """Bot API 9.0: i quiz multi-risposta richiedono allows_multiple_answers=True."""
+        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
+        quiz = {
+            "question": "Quali sono vere?",
+            "options": ["A", "B", "C", "D"],
+            "correct_option_ids": [0, 2],
+        }
+        quiz_bot.send_poll(quiz)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["correct_option_ids"], [0, 2])
+        self.assertTrue(payload["allows_multiple_answers"])
+
+    @patch("quiz_bot.requests.post")
+    def test_single_correct_omits_multiple_answers(self, mock_post):
+        """Per quiz a risposta singola, allows_multiple_answers non deve essere
+        impostato (default False, evita rumore nel payload)."""
+        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
+        quiz = {
+            "question": "Q?",
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        quiz_bot.send_poll(quiz)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertNotIn("allows_multiple_answers", payload)
 
 
 class TestHasRecentActivity(unittest.TestCase):
@@ -283,16 +353,51 @@ class TestValidateQuiz(unittest.TestCase):
         }
         self.assertEqual(quiz_bot.validate_quiz(quiz), [])
 
-    def test_flags_question_plus_description_over_limit(self):
+    def test_flags_question_over_limit(self):
+        """Bot API 9.0: il limite di 300 char ora si applica solo alla question,
+        la description ha il suo budget separato di 200 char."""
         quiz = {
-            "question": "Q" * 200,
-            "description": "D" * 200,
+            "question": "Q" * 301,
             "options": ["A", "B"],
             "correct_option_ids": [0],
         }
         errors = quiz_bot.validate_quiz(quiz)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("question+description", errors[0])
+        self.assertTrue(any("question" in e and "300" in e for e in errors))
+
+    def test_question_300_and_description_200_are_valid(self):
+        """Limiti separati: 300 + 200 ora sono entrambi validi insieme."""
+        quiz = {
+            "question": "Q" * 300,
+            "description": "D" * 100,  # 100 + footer breve resta sotto i 200
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        self.assertEqual(quiz_bot.validate_quiz(quiz), [])
+
+    def test_flags_description_over_limit(self):
+        quiz = {
+            "question": "Q",
+            "description": "D" * 250,
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        errors = quiz_bot.validate_quiz(quiz)
+        self.assertTrue(any("description" in e and "200" in e for e in errors))
+
+    def test_description_with_model_footer_counted(self):
+        """Il footer di trasparenza sul modello viene incluso nella
+        misurazione della description per evitare sforamenti runtime."""
+        # description 180 + footer "\n\n— generato con claude-haiku-4-5"
+        # ≈ 180 + 42 = 222 > 200
+        quiz = {
+            "question": "Q",
+            "description": "D" * 180,
+            "model": "claude-haiku-4-5",
+            "options": ["A", "B"],
+            "correct_option_ids": [0],
+        }
+        errors = quiz_bot.validate_quiz(quiz)
+        self.assertTrue(any("description" in e for e in errors))
 
     def test_flags_option_over_limit(self):
         quiz = {
@@ -362,7 +467,7 @@ class TestCallGemini(unittest.TestCase):
         )
         result = quiz_bot.call_gemini("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertIn("gemini-2.5-flash", result["explanation"])
+        self.assertEqual(result["model"], "gemini-2.5-flash")
 
     @patch("quiz_bot.genai.Client")
     def test_strips_code_fences(self, mock_client):
@@ -371,7 +476,7 @@ class TestCallGemini(unittest.TestCase):
         mock_client.return_value.models.generate_content.return_value = self._make_response(wrapped)
         result = quiz_bot.call_gemini("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertIn("gemini-2.5-flash", result["explanation"])
+        self.assertEqual(result["model"], "gemini-2.5-flash")
 
     @patch("quiz_bot.genai.Client")
     def test_exits_on_invalid_json(self, mock_client):
