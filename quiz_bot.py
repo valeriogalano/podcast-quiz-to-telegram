@@ -71,9 +71,11 @@ Rispondi SOLO con un JSON valido, senza backtick, senza testo aggiuntivo:
   "description": "snippet di codice o contesto opzionale (max 140 caratteri: i restanti caratteri della description del poll Telegram sono riservati al footer di trasparenza sul modello)",
   "options": ["opzione A", "opzione B", "opzione C"],
   "correct_option_ids": [0],
-  "explanation": "spiegazione breve della risposta corretta (max 200 caratteri)"
+  "explanation": "spiegazione MOLTO BREVE della risposta corretta — massimo assoluto 200 caratteri, idealmente 150. Conta ogni lettera, spazio e segno di punteggiatura. Una o due frasi essenziali."
 }
-correct_option_ids è una lista di indici 0-based delle risposte corrette: usa UN solo indice per quiz a risposta singola, oppure 2-3 indici per quiz a risposta multipla (in tal caso formula la domanda in modo che sia chiaro che più risposte sono corrette, es. "Quali di queste affermazioni sono vere?"). Il numero di opzioni deve essere tra 2 e 6, scegli quello più adatto alla domanda. Domande concrete e specifiche, non generiche. Ometti `description` se non è necessaria."""
+correct_option_ids è una lista di indici 0-based delle risposte corrette: usa UN solo indice per quiz a risposta singola, oppure 2-3 indici per quiz a risposta multipla (in tal caso formula la domanda in modo che sia chiaro che più risposte sono corrette, es. "Quali di queste affermazioni sono vere?"). Il numero di opzioni deve essere tra 2 e 6, scegli quello più adatto alla domanda. Domande concrete e specifiche, non generiche. Ometti `description` se non è necessaria.
+
+ATTENZIONE LIMITI: il sistema rifiuta il quiz se la `explanation` supera 200 caratteri, quindi sii sintetico. Meglio una spiegazione di 120 caratteri che chiara ma incompleta, piuttosto che 220 che debordi."""
 
 _GENERIC_TOPICS = [
     "storia dell'informatica: personaggi, invenzioni, aneddoti",
@@ -376,7 +378,7 @@ def validate_quiz(quiz: dict) -> list[str]:
     return errors
 
 
-_MAX_QUIZ_RETRIES = 3
+_MAX_QUIZ_RETRIES = 5
 
 
 def generate_valid_quiz() -> tuple[dict, str | None]:

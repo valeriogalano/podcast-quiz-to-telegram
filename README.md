@@ -25,7 +25,7 @@ Ad ogni esecuzione lo script:
 2. Decide casualmente il tipo di quiz da generare:
    - **75% delle volte**: quiz generico — sceglie un tema casuale tra oltre 30 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e chiama Claude Haiku per generarlo.
    - **25% delle volte**: quiz da episodio — scarica il feed RSS, seleziona un episodio casuale, ne estrae la trascrizione e cerca il file script corrispondente nel repo GitHub. Se trova almeno uno dei due contenuti, li passa a Claude Haiku per generare il quiz. Se non trova nulla, ricade sul quiz generico.
-3. Valida il quiz rispetto ai limiti dell'API Telegram (domanda ≤ 300 caratteri, descrizione ≤ 200 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **3 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
+3. Valida il quiz rispetto ai limiti dell'API Telegram (domanda ≤ 300 caratteri, descrizione ≤ 200 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **5 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
 4. Stampa il contenuto del quiz nei log (utile per il debug) e pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con:
    - eventuale snippet/contesto nel campo `description` nativo (Bot API 9.0)
    - footer di trasparenza che indica il modello AI usato per generarlo (es. `— generato con claude-haiku-4-5`)
