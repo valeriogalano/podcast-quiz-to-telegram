@@ -299,9 +299,6 @@ def send_poll(quiz: dict) -> dict:
         "shuffle_options": True,
         "is_anonymous": True,
         "open_period": 86400,
-        # Bot API 9.0: nasconde i risultati finché il poll non chiude, così chi
-        # vota dopo non vede già le scelte degli altri.
-        "hide_results_until_closes": True,
     }
     description = build_poll_description(quiz)
     if description:
