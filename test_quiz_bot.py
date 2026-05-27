@@ -140,9 +140,10 @@ class TestSendPoll(unittest.TestCase):
         # correct_option_id e accetta una lista.
         self.assertEqual(payload["correct_option_ids"], [1])
         self.assertNotIn("correct_option_id", payload)
-        # Bot API 9.0: hide_results_until_closes attivo di default per non
-        # spoilerare i voti ai late voters.
-        self.assertTrue(payload["hide_results_until_closes"])
+        # hide_results_until_closes non viene impostato: con quel flag attivo
+        # Telegram mostra la `explanation` solo alla chiusura del poll, mentre
+        # vogliamo che sia visibile subito dopo la risposta.
+        self.assertNotIn("hide_results_until_closes", payload)
 
     @patch("quiz_bot.requests.post")
     def test_description_goes_to_native_field(self, mock_post):
