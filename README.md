@@ -59,7 +59,7 @@ Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse v
 | `SCRIPT_EXTENSION` | ✓ | Estensioni dei file script separate da virgola (es. `.json,.yml`) |
 | `GOOGLE_API_KEY` | se usi Gemini | Chiave API di Google (da [AI Studio](https://aistudio.google.com/)) |
 | `ANTHROPIC_API_KEY` | se usi Claude | Chiave API di Anthropic |
-| `QUIZ_PROVIDER` |  | Provider AI da usare: `google` (default) oppure `anthropic` |
+| `QUIZ_PROVIDER` |  | Provider AI da usare, anche in fallback esplicito separato da virgola: `google` (default), `anthropic`, oppure `google,anthropic` |
 | `TELEGRAM_ACTIVITY_CHAT_ID` |  | Gruppo da monitorare per l'attività (default: `TELEGRAM_CHAT_ID`) |
 | `TELEGRAM_ACTIVITY_WINDOW_MINUTES` |  | Durata in minuti della finestra di attività (default: `240`) |
 
@@ -194,7 +194,7 @@ Limiti imposti dall'API Telegram (validati a runtime, con rigenerazione automati
 
 ## Trasparenza
 
-I quiz pubblicati nel canale sono **generati automaticamente da un modello AI** (Claude di Anthropic oppure Gemini di Google, in base alla configurazione di `QUIZ_PROVIDER`), sulla base delle trascrizioni e degli script degli episodi. Per rendere visibile la provenienza, **ogni quiz mostra in calce alla descrizione il nome del modello specifico usato per generarlo** (es. `— generato con claude-haiku-4-5`).
+I quiz pubblicati nel canale sono **generati automaticamente da un modello AI** (Claude di Anthropic oppure Gemini di Google, in base alla configurazione di `QUIZ_PROVIDER`), sulla base delle trascrizioni e degli script degli episodi. `QUIZ_PROVIDER` può contenere più provider separati da virgola: lo script esaurisce i tentativi sul primo prima di passare al successivo. Per rendere visibile la provenienza, **ogni quiz mostra in calce alla descrizione il nome del modello specifico usato per generarlo** (es. `— generato con claude-haiku-4-5`).
 
 Nonostante le istruzioni mirate, le risposte potrebbero contenere imprecisioni o errori. Per qualsiasi dubbio, fai sempre riferimento alle fonti originali degli episodi.
 
