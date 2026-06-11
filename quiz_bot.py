@@ -38,10 +38,9 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 # `quiz["model"]` e mostrati nella `description` del poll su Telegram per
 # trasparenza verso il pubblico del canale.
 # Cfr. https://docs.anthropic.com/en/docs/about-claude/models/overview
-# `claude-haiku-4-5` è l'alias e attualmente risolve a `claude-haiku-4-5-20251001`.
-# Il precedente `claude-3-5-haiku-20241022` è stato deprecato il 19 feb 2026.
-_CLAUDE_MODEL = "claude-haiku-4-5"
-_GEMINI_MODEL = "gemini-2.5-flash"
+# e https://ai.google.dev/gemini-api/docs/models.
+_CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+_GEMINI_MODEL = "gemini-3.5-flash"
 
 # Limiti dell'API Telegram Bot per i poll di tipo quiz.
 # Cfr. https://core.telegram.org/bots/api#sendpoll
