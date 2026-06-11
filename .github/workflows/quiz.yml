@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -27,6 +27,7 @@ jobs:
           GH_REPO: ${{ vars.GH_REPO }}
           GH_SCRIPTS_PATH: ${{ vars.GH_SCRIPTS_PATH }}
           SCRIPT_EXTENSION: ${{ vars.SCRIPT_EXTENSION }}
+          QUIZ_PROVIDER: ${{ vars.QUIZ_PROVIDER }}
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
           TELEGRAM_ACTIVITY_CHAT_ID: ${{ vars.TELEGRAM_ACTIVITY_CHAT_ID }}
           TELEGRAM_ACTIVITY_WINDOW_MINUTES: ${{ vars.TELEGRAM_ACTIVITY_WINDOW_MINUTES }}
@@ -34,4 +35,3 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python quiz_bot.py
-

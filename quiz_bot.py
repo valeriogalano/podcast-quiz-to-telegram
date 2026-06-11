@@ -52,6 +52,10 @@ _TELEGRAM_EXPLANATION_MAX = 200
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+class QuizProviderError(RuntimeError):
+    """Errore recuperabile durante la generazione del quiz via provider AI."""
+
+
 def _env_float(name: str, default: float) -> float:
     """Legge una variabile d'ambiente numerica trattando valore assente o vuoto come default.
 
@@ -232,16 +236,25 @@ def call_claude(system: str, user: str) -> dict:
     try:
         result = json.loads(raw)
     except json.JSONDecodeError as e:
-        print(f"Errore: risposta di Claude non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
-        sys.exit(1)
+        raise QuizProviderError(f"risposta di Claude non è un JSON valido: {e}\n{raw}") from e
     result["model"] = _CLAUDE_MODEL
     return result
 
 
-def call_ai(system: str, user: str) -> dict:
-    if QUIZ_PROVIDER == "anthropic":
+def get_quiz_providers() -> list[str]:
+    providers = [item.strip().lower() for item in QUIZ_PROVIDER.split(",") if item.strip()]
+    return providers or ["google"]
+
+
+def call_ai(system: str, user: str, provider: str | None = None) -> dict:
+    selected = (provider or get_quiz_providers()[0]).lower()
+    if selected in {"anthropic", "claude"}:
         return call_claude(system, user)
-    return call_gemini(system, user)
+    if selected in {"google", "gemini"}:
+        return call_gemini(system, user)
+    raise QuizProviderError(
+        f"provider AI non supportato: {selected!r}. Usa google/gemini oppure anthropic/claude."
+    )
 
 
 def call_gemini(system: str, user: str) -> dict:
@@ -260,8 +273,7 @@ def call_gemini(system: str, user: str) -> dict:
     try:
         result = json.loads(raw)
     except json.JSONDecodeError as e:
-        print(f"Errore: risposta di Gemini non è un JSON valido.\n{raw}\n{e}", file=sys.stderr)
-        sys.exit(1)
+        raise QuizProviderError(f"risposta di Gemini non è un JSON valido: {e}\n{raw}") from e
     result["model"] = _GEMINI_MODEL
     return result
 
@@ -317,7 +329,7 @@ def send_poll(quiz: dict) -> dict:
     return resp.json()
 
 
-def generate_quiz_content() -> tuple[dict, str | None]:
+def generate_quiz_content(provider: str | None = None) -> tuple[dict, str | None]:
     """Genera il quiz e ritorna (quiz, episode_ref)."""
     if FEED_RSS_URL and random.random() < 0.25:
         try:
@@ -338,12 +350,12 @@ def generate_quiz_content() -> tuple[dict, str | None]:
                     f"SCRIPT:\n{script[:2000]}" if script else "",
                 ]))
                 print("Genero il quiz basato sull'episodio...")
-                return call_ai(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}"), title
+                return call_ai(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}", provider), title
             print("Nessun contenuto episodio disponibile, passo al quiz generico...")
 
     topic = random.choice(_GENERIC_TOPICS)
     print(f"Genero un quiz generico (tema: {topic})...")
-    return call_ai(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}"), None
+    return call_ai(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}", provider), None
 
 
 def validate_quiz(quiz: dict) -> list[str]:
@@ -379,21 +391,38 @@ _MAX_QUIZ_RETRIES = 5
 
 
 def generate_valid_quiz() -> tuple[dict, str | None]:
-    """Genera un quiz valido rispetto ai limiti Telegram, con al massimo 3 tentativi."""
-    for attempt in range(1, _MAX_QUIZ_RETRIES + 1):
-        quiz, episode_ref = generate_quiz_content()
-        print_quiz(quiz, episode_ref)
-        errors = validate_quiz(quiz)
-        if not errors:
-            return quiz, episode_ref
-        print(
-            f"Quiz non valido (tentativo {attempt}/{_MAX_QUIZ_RETRIES}): {'; '.join(errors)}",
-            file=sys.stderr,
-        )
-        if attempt < _MAX_QUIZ_RETRIES:
-            print("Rigenero il quiz...")
+    """Genera un quiz valido rispetto ai limiti Telegram provando i provider configurati."""
+    providers = get_quiz_providers()
+    for provider_index, provider in enumerate(providers, start=1):
+        if len(providers) > 1:
+            print(f"Uso provider AI {provider_index}/{len(providers)}: {provider}")
+        for attempt in range(1, _MAX_QUIZ_RETRIES + 1):
+            try:
+                quiz, episode_ref = generate_quiz_content(provider)
+            except Exception as e:
+                print(
+                    f"Errore provider {provider} (tentativo {attempt}/{_MAX_QUIZ_RETRIES}): {e}",
+                    file=sys.stderr,
+                )
+                if attempt < _MAX_QUIZ_RETRIES:
+                    print("Riprovo con lo stesso provider...")
+                continue
+
+            print_quiz(quiz, episode_ref)
+            errors = validate_quiz(quiz)
+            if not errors:
+                return quiz, episode_ref
+            print(
+                f"Quiz non valido (tentativo {attempt}/{_MAX_QUIZ_RETRIES}): {'; '.join(errors)}",
+                file=sys.stderr,
+            )
+            if attempt < _MAX_QUIZ_RETRIES:
+                print("Rigenero il quiz...")
+        if provider_index < len(providers):
+            print(f"Provider {provider} esaurito, passo al prossimo provider...")
     print(
-        f"Errore: impossibile generare un quiz valido dopo {_MAX_QUIZ_RETRIES} tentativi.",
+        f"Errore: impossibile generare un quiz valido dopo {_MAX_QUIZ_RETRIES} tentativi "
+        f"per ciascun provider configurato: {', '.join(providers)}.",
         file=sys.stderr,
     )
     sys.exit(1)

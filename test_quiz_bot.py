@@ -118,7 +118,7 @@ class TestCallClaude(unittest.TestCase):
     @patch("quiz_bot.anthropic.Anthropic")
     def test_exits_on_invalid_json(self, mock_anthropic):
         mock_anthropic.return_value.messages.create.return_value = self._make_message("non è json")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(quiz_bot.QuizProviderError):
             quiz_bot.call_claude("system", "user")
 
 
@@ -482,7 +482,7 @@ class TestCallGemini(unittest.TestCase):
     @patch("quiz_bot.genai.Client")
     def test_exits_on_invalid_json(self, mock_client):
         mock_client.return_value.models.generate_content.return_value = self._make_response("non è json")
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(quiz_bot.QuizProviderError):
             quiz_bot.call_gemini("system", "user")
 
 
@@ -503,6 +503,27 @@ class TestCallAi(unittest.TestCase):
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "anthropic"):
             quiz_bot.call_ai("system", "user")
         mock_claude.assert_called_once_with("system", "user")
+
+    @patch("quiz_bot.call_claude")
+    def test_routes_to_explicit_provider(self, mock_claude):
+        mock_claude.return_value = self._response()
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
+            quiz_bot.call_ai("system", "user", provider="claude")
+        mock_claude.assert_called_once_with("system", "user")
+
+    def test_rejects_unknown_provider(self):
+        with self.assertRaises(quiz_bot.QuizProviderError):
+            quiz_bot.call_ai("system", "user", provider="unknown")
+
+
+class TestGetQuizProviders(unittest.TestCase):
+    def test_parses_comma_separated_providers(self):
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google, anthropic"):
+            self.assertEqual(quiz_bot.get_quiz_providers(), ["google", "anthropic"])
+
+    def test_empty_config_falls_back_to_google(self):
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", " , "):
+            self.assertEqual(quiz_bot.get_quiz_providers(), ["google"])
 
 
 class TestGenerateQuizContent(unittest.TestCase):
@@ -604,10 +625,12 @@ class TestGenerateValidQuiz(unittest.TestCase):
     @patch("quiz_bot.generate_quiz_content")
     def test_returns_on_first_valid_attempt(self, mock_gen, _):
         mock_gen.return_value = (self._valid_quiz(), None)
-        quiz, episode_ref = quiz_bot.generate_valid_quiz()
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
+            quiz, episode_ref = quiz_bot.generate_valid_quiz()
         self.assertEqual(quiz["question"], "Q?")
         self.assertIsNone(episode_ref)
         self.assertEqual(mock_gen.call_count, 1)
+        mock_gen.assert_called_once_with("google")
 
     @patch("quiz_bot.print_quiz")
     @patch("quiz_bot.generate_quiz_content")
@@ -618,7 +641,8 @@ class TestGenerateValidQuiz(unittest.TestCase):
             "correct_option_ids": [0],
         }
         mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), "Ep 1")]
-        quiz, episode_ref = quiz_bot.generate_valid_quiz()
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
+            quiz, episode_ref = quiz_bot.generate_valid_quiz()
         self.assertEqual(quiz["question"], "Q?")
         self.assertEqual(episode_ref, "Ep 1")
         self.assertEqual(mock_gen.call_count, 2)
@@ -632,9 +656,26 @@ class TestGenerateValidQuiz(unittest.TestCase):
             "correct_option_ids": [0],
         }
         mock_gen.return_value = (invalid, None)
-        with self.assertRaises(SystemExit):
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), self.assertRaises(SystemExit):
             quiz_bot.generate_valid_quiz()
         self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES)
+
+    @patch("quiz_bot.print_quiz")
+    @patch("quiz_bot.generate_quiz_content")
+    def test_retries_provider_errors_before_next_provider(self, mock_gen, _):
+        failures = [quiz_bot.QuizProviderError("503")] * quiz_bot._MAX_QUIZ_RETRIES
+        mock_gen.side_effect = [*failures, (self._valid_quiz(), None)]
+
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google,anthropic"):
+            quiz, episode_ref = quiz_bot.generate_valid_quiz()
+
+        self.assertEqual(quiz["question"], "Q?")
+        self.assertIsNone(episode_ref)
+        self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES + 1)
+        self.assertEqual(
+            [call.args[0] for call in mock_gen.call_args_list],
+            ["google"] * quiz_bot._MAX_QUIZ_RETRIES + ["anthropic"],
+        )
 
 
 if __name__ == "__main__":
