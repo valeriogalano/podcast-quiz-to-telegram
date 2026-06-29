@@ -1,4 +1,5 @@
 import datetime
+import html
 import json
 import os
 import re
@@ -328,8 +329,50 @@ def send_poll(quiz: dict) -> dict:
     return resp.json()
 
 
-def generate_quiz_content(provider: str | None = None) -> tuple[dict, str | None]:
-    """Genera il quiz e ritorna (quiz, episode_ref)."""
+def send_episode_reference(episode_ref: dict, reply_to_message_id: int) -> dict | None:
+    """Pubblica un messaggio col riferimento all'episodio, in reply al poll.
+
+    I poll Telegram non rendono link cliccabili, quindi il riferimento va in un
+    `sendMessage` separato (testo fino a 4096 caratteri, formattazione HTML).
+    Se il feed espone il `link` della pagina dell'episodio, il titolo diventa un
+    link cliccabile e Telegram ne mostra l'anteprima; altrimenti si pubblica il
+    solo titolo. Il messaggio è agganciato al poll tramite `reply_parameters`.
+
+    Ritorna la risposta di Telegram, o None se non c'è alcun riferimento da
+    pubblicare.
+    """
+    title = episode_ref.get("title")
+    link = episode_ref.get("link")
+    if not title and not link:
+        return None
+    if link:
+        text = f'📻 Episodio: <a href="{html.escape(link, quote=True)}">{html.escape(title or link)}</a>'
+    else:
+        text = f"📻 Episodio: {html.escape(title)}"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text,
+        "parse_mode": "HTML",
+        # Aggancia il messaggio al poll così resta visivamente collegato.
+        "reply_parameters": {"message_id": reply_to_message_id},
+    }
+    resp = requests.post(
+        f"{TELEGRAM_API}/sendMessage",
+        json=payload,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | None]:
+    """Genera il quiz e ritorna (quiz, episode_ref).
+
+    Per i quiz basati su un episodio, `episode_ref` è un dict con `title` e
+    `link` (la pagina dell'episodio sul sito, se presente nel feed RSS), usato
+    poi per pubblicare il riferimento all'episodio nel canale. Per i quiz
+    generici è `None`.
+    """
     if FEED_RSS_URL and random.random() < 0.25:
         try:
             episode = fetch_random_episode()
@@ -349,7 +392,8 @@ def generate_quiz_content(provider: str | None = None) -> tuple[dict, str | None
                     f"SCRIPT:\n{script[:2000]}" if script else "",
                 ]))
                 print("Genero il quiz basato sull'episodio...")
-                return call_ai(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}", provider), title
+                episode_ref = {"title": title, "link": episode.get("link")}
+                return call_ai(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}", provider), episode_ref
             print("Nessun contenuto episodio disponibile, passo al quiz generico...")
 
     topic = random.choice(_GENERIC_TOPICS)
@@ -389,7 +433,7 @@ def validate_quiz(quiz: dict) -> list[str]:
 _MAX_QUIZ_RETRIES = 5
 
 
-def generate_valid_quiz() -> tuple[dict, str | None]:
+def generate_valid_quiz() -> tuple[dict, dict | None]:
     """Genera un quiz valido rispetto ai limiti Telegram provando i provider configurati."""
     providers = get_quiz_providers()
     for provider_index, provider in enumerate(providers, start=1):
@@ -427,9 +471,9 @@ def generate_valid_quiz() -> tuple[dict, str | None]:
     sys.exit(1)
 
 
-def print_quiz(quiz: dict, episode_ref: str | None, index: int | None = None) -> None:
+def print_quiz(quiz: dict, episode_ref: dict | None, index: int | None = None) -> None:
     prefix = f"[{index}] " if index is not None else ""
-    tipo = f"episodio ({episode_ref})" if episode_ref else "generico"
+    tipo = f"episodio ({episode_ref['title']})" if episode_ref else "generico"
     print(f"\n{'─'*60}")
     print(f"{prefix}{tipo}")
     print(f"Q: {quiz['question']}")
@@ -466,11 +510,21 @@ def main() -> None:
     print("Invio il poll su Telegram...")
     poll_message_id = send_poll(quiz)["result"]["message_id"]
 
+    if episode_ref:
+        # Il riferimento all'episodio va in un messaggio a parte: se questo
+        # fallisce il quiz è comunque già pubblicato, quindi non interrompiamo.
+        print("Pubblico il riferimento all'episodio...")
+        try:
+            send_episode_reference(episode_ref, poll_message_id)
+        except Exception as e:
+            print(f"Avviso: impossibile pubblicare il riferimento all'episodio ({e}).", file=sys.stderr)
+
+    episode_title = episode_ref["title"] if episode_ref else None
     correct = quiz["options"][quiz["correct_option_ids"][0]]
     print(
         f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
         f"type={'episodio' if episode_ref else 'generico'} "
-        f"episode={episode_ref!r} poll_id={poll_message_id} status=success\n"
+        f"episode={episode_title!r} poll_id={poll_message_id} status=success\n"
         f"  Q: {quiz['question']}\n"
         f"  A: {correct}\n"
         f"  💡 {quiz.get('explanation', '')}"

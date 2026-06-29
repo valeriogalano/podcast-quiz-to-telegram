@@ -221,6 +221,51 @@ class TestSendPoll(unittest.TestCase):
         self.assertNotIn("allows_multiple_answers", payload)
 
 
+class TestSendEpisodeReference(unittest.TestCase):
+    @patch("quiz_bot.requests.post")
+    def test_sends_link_as_html_in_reply(self, mock_post):
+        mock_post.return_value.json.return_value = {"result": {"message_id": 7}}
+        ep = {"title": "Bluetooth", "link": "https://example.com/ep"}
+        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
+            result = quiz_bot.send_episode_reference(ep, reply_to_message_id=42)
+        self.assertEqual(result["result"]["message_id"], 7)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["parse_mode"], "HTML")
+        # Il messaggio è agganciato al poll.
+        self.assertEqual(payload["reply_parameters"], {"message_id": 42})
+        # Titolo reso come link cliccabile (anteprima lasciata di default).
+        self.assertIn('<a href="https://example.com/ep">Bluetooth</a>', payload["text"])
+        self.assertNotIn("link_preview_options", payload)
+
+    @patch("quiz_bot.requests.post")
+    def test_title_only_when_no_link(self, mock_post):
+        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
+        ep = {"title": "Senza link", "link": None}
+        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
+            quiz_bot.send_episode_reference(ep, reply_to_message_id=1)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIn("Senza link", payload["text"])
+        self.assertNotIn("<a href", payload["text"])
+
+    @patch("quiz_bot.requests.post")
+    def test_escapes_html_in_title(self, mock_post):
+        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
+        ep = {"title": "A & B <C>", "link": "https://example.com/ep"}
+        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
+            quiz_bot.send_episode_reference(ep, reply_to_message_id=1)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIn("A &amp; B &lt;C&gt;", payload["text"])
+
+    @patch("quiz_bot.requests.post")
+    def test_returns_none_when_empty(self, mock_post):
+        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
+            result = quiz_bot.send_episode_reference(
+                {"title": None, "link": None}, reply_to_message_id=1
+            )
+        self.assertIsNone(result)
+        mock_post.assert_not_called()
+
+
 class TestHasRecentActivity(unittest.TestCase):
     def _make_update(self, chat_id, username, timestamp, update_id=1):
         return {
@@ -442,7 +487,9 @@ class TestPrintQuiz(unittest.TestCase):
 
     @patch("builtins.print")
     def test_prints_episode_quiz(self, _):
-        quiz_bot.print_quiz(self._quiz(), episode_ref="Episodio 42")
+        quiz_bot.print_quiz(
+            self._quiz(), episode_ref={"title": "Episodio 42", "link": None}
+        )
 
     @patch("builtins.print")
     def test_prints_with_description(self, _):
@@ -562,6 +609,7 @@ class TestGenerateQuizContent(unittest.TestCase):
         mock_random.random.return_value = 0.1
         mock_fetch_ep.return_value = {
             "title": "Titolo ep",
+            "link": "https://example.com/ep",
             "summary": "trascrizione dall'episodio",
         }
         mock_ai.return_value = self._claude_response()
@@ -569,9 +617,31 @@ class TestGenerateQuizContent(unittest.TestCase):
         with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
             quiz, episode_ref = quiz_bot.generate_quiz_content()
 
-        self.assertEqual(episode_ref, "Titolo ep")
+        # episode_ref porta titolo + link della pagina dell'episodio, usati poi
+        # per pubblicare il riferimento nel canale.
+        self.assertEqual(episode_ref, {"title": "Titolo ep", "link": "https://example.com/ep"})
         self.assertEqual(quiz["question"], "Q?")
         self.assertEqual(mock_ai.call_args.args[0], quiz_bot._EPISODE_SYSTEM)
+
+    @patch("quiz_bot.call_ai")
+    @patch("quiz_bot.fetch_github_script", return_value="")
+    @patch("quiz_bot.fetch_random_episode")
+    @patch("quiz_bot.random")
+    def test_episode_path_without_link(
+        self, mock_random, mock_fetch_ep, mock_fetch_script, mock_ai
+    ):
+        """Se il feed non espone `link`, episode_ref lo riporta come None."""
+        mock_random.random.return_value = 0.1
+        mock_fetch_ep.return_value = {
+            "title": "Titolo ep",
+            "summary": "trascrizione dall'episodio",
+        }
+        mock_ai.return_value = self._claude_response()
+
+        with patch.object(quiz_bot, "FEED_RSS_URL", "http://example.com/feed"):
+            _, episode_ref = quiz_bot.generate_quiz_content()
+
+        self.assertEqual(episode_ref, {"title": "Titolo ep", "link": None})
 
     @patch("quiz_bot.call_ai")
     @patch("quiz_bot.fetch_random_episode", side_effect=RuntimeError("feed vuoto"))
@@ -639,11 +709,12 @@ class TestGenerateValidQuiz(unittest.TestCase):
             "options": ["A", "B"],
             "correct_option_ids": [0],
         }
-        mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), "Ep 1")]
+        ep_ref = {"title": "Ep 1", "link": "https://example.com/ep"}
+        mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), ep_ref)]
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
             quiz, episode_ref = quiz_bot.generate_valid_quiz()
         self.assertEqual(quiz["question"], "Q?")
-        self.assertEqual(episode_ref, "Ep 1")
+        self.assertEqual(episode_ref, ep_ref)
         self.assertEqual(mock_gen.call_count, 2)
 
     @patch("quiz_bot.print_quiz")
