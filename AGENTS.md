@@ -25,17 +25,12 @@ Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRA
 
 `QUIZ_PROVIDER` è opzionale: provider AI da usare, `google`/`gemini` o `anthropic`/`claude`, anche più di uno separato da virgola come fallback. Default: `google`.
 
-`TELEGRAM_ACTIVITY_CHAT_ID` è opzionale: se impostata, il quiz viene saltato se quel gruppo ha avuto attività all'interno della finestra configurata. Default: `TELEGRAM_CHAT_ID`.
-
-`TELEGRAM_ACTIVITY_WINDOW_MINUTES` è opzionale: durata in minuti della finestra di controllo attività. Default: `240` (= 4 ore). Variabile assente o stringa vuota sono equivalenti e cadono sul default (così GitHub Actions può iniettare `vars.*` non definite senza rompere il job).
-
 ## Workflow GitHub Actions
 
-`quiz.yml` — si esegue ogni ora dalle 08:00 alle 17:00 UTC (cron `0 8-17 * * *`), oppure manualmente via `workflow_dispatch`. A ogni esecuzione `has_recent_activity` decide se pubblicare o saltare. Le variabili d'ambiente sensibili vengono passate come GitHub Secrets, le altre come GitHub Variables.
+`quiz.yml` — si esegue alle 11:00 e alle 15:00 UTC (cron `0 11,15 * * *`), oppure manualmente via `workflow_dispatch`. Ogni esecuzione pubblica un quiz. Le variabili d'ambiente sensibili vengono passate come GitHub Secrets, le altre come GitHub Variables.
 
 ## Logica principale
 
 - 75% delle esecuzioni: quiz generico su informatica/programmazione
 - 25% delle esecuzioni: quiz basato su un episodio casuale del feed RSS (trascrizione + script GitHub se disponibile)
 - Per i quiz basati su un episodio, dopo il poll viene pubblicato un messaggio separato (in reply al poll) con il riferimento all'episodio: titolo + link cliccabile alla pagina del sito (dal campo `link` del feed RSS), con anteprima. Se l'invio del messaggio fallisce, il quiz resta comunque pubblicato.
-- Se il gruppo di riferimento ha avuto attività nella finestra configurata (default 240 minuti), il quiz viene saltato (`exit 0`)

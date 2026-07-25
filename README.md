@@ -21,12 +21,11 @@
 
 Ad ogni esecuzione lo script:
 
-1. Verifica che ci sia stata attività recente nel gruppo Telegram di riferimento (configurabile). Se ci sono messaggi all'interno della finestra configurata (default **240 minuti** = 4 ore, modificabile via `TELEGRAM_ACTIVITY_WINDOW_MINUTES`), il quiz viene saltato per non interrompere la conversazione.
-2. Decide casualmente il tipo di quiz da generare:
+1. Decide casualmente il tipo di quiz da generare:
    - **75% delle volte**: quiz generico — sceglie un tema casuale tra oltre 30 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e chiama Claude Haiku per generarlo.
    - **25% delle volte**: quiz da episodio — scarica il feed RSS, seleziona un episodio casuale, ne estrae la trascrizione e cerca il file script corrispondente nel repo GitHub. Se trova almeno uno dei due contenuti, li passa a Claude Haiku per generare il quiz. Se non trova nulla, ricade sul quiz generico.
-3. Valida il quiz rispetto ai limiti dell'API Telegram (domanda ≤ 300 caratteri, descrizione ≤ 200 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **5 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
-4. Stampa il contenuto del quiz nei log (utile per il debug) e pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con:
+2. Valida il quiz rispetto ai limiti dell'API Telegram (domanda ≤ 300 caratteri, descrizione ≤ 200 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **5 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
+3. Stampa il contenuto del quiz nei log (utile per il debug) e pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con:
    - eventuale snippet/contesto nel campo `description` nativo (Bot API 9.0)
    - footer di trasparenza che indica il modello AI usato per generarlo (es. `— generato con claude-haiku-4-5-20251001`)
    - supporto per **più risposte corrette** quando appropriato (con `allows_multiple_answers`)
@@ -60,8 +59,6 @@ Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse v
 | `GOOGLE_API_KEY` | se usi Gemini | Chiave API di Google (da [AI Studio](https://aistudio.google.com/)) |
 | `ANTHROPIC_API_KEY` | se usi Claude | Chiave API di Anthropic |
 | `QUIZ_PROVIDER` |  | Provider AI da usare, anche in fallback esplicito separato da virgola: `google` (default), `anthropic`, oppure `google,anthropic` |
-| `TELEGRAM_ACTIVITY_CHAT_ID` |  | Gruppo da monitorare per l'attività (default: `TELEGRAM_CHAT_ID`) |
-| `TELEGRAM_ACTIVITY_WINDOW_MINUTES` |  | Durata in minuti della finestra di attività (default: `240`) |
 
 ---
 

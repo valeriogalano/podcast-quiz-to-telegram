@@ -5,7 +5,6 @@ import os
 import re
 import random
 import sys
-import time
 
 try:
     from dotenv import load_dotenv
@@ -27,7 +26,6 @@ SCRIPT_EXTENSIONS = tuple(
     ext.strip() for ext in os.environ.get("SCRIPT_EXTENSION", ".md").split(",")
 )
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-TELEGRAM_ACTIVITY_CHAT_ID = os.environ.get("TELEGRAM_ACTIVITY_CHAT_ID", TELEGRAM_CHAT_ID)
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 QUIZ_PROVIDER = os.environ.get("QUIZ_PROVIDER", "google").lower()
@@ -55,18 +53,6 @@ _TELEGRAM_EXPLANATION_MAX = 200
 class QuizProviderError(RuntimeError):
     """Errore recuperabile durante la generazione del quiz via provider AI."""
 
-
-def _env_float(name: str, default: float) -> float:
-    """Legge una variabile d'ambiente numerica trattando valore assente o vuoto come default.
-
-    Necessario perché GitHub Actions inietta sempre la chiave anche quando la
-    `vars.*` sorgente non è definita, con il risultato di impostarla a stringa
-    vuota: `os.environ.get(name, default)` in quel caso non cade sul default.
-    """
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        return default
-    return float(raw)
 
 _JSON_SCHEMA = """\
 Rispondi SOLO con un JSON valido, senza backtick, senza testo aggiuntivo:
@@ -133,47 +119,6 @@ Stimola la curiosità, evita algoritmi avanzati. \
 Preferisci domande su comportamenti inattesi, curiosità, errori comuni o concetti fondamentali.
 
 """ + _JSON_SCHEMA
-
-
-def has_recent_activity(minutes: float | None = None) -> bool:
-    """Ritorna True se c'è stata attività nel gruppo di riferimento negli ultimi `minutes` minuti.
-
-    Usa `getUpdates` con offset negativo: Telegram ritorna gli ultimi N update senza
-    confermarli, così non vengono rimossi dalla coda e restano visibili alle run successive.
-    """
-    if minutes is None:
-        minutes = _env_float("TELEGRAM_ACTIVITY_WINDOW_MINUTES", 240.0)
-    threshold = time.time() - minutes * 60
-    activity_id = TELEGRAM_ACTIVITY_CHAT_ID.lstrip("@")
-    try:
-        resp = requests.get(
-            f"{TELEGRAM_API}/getUpdates",
-            params={"offset": -100, "limit": 100, "timeout": 0},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        updates = resp.json().get("result", [])
-        matched = 0
-        last_ts: float | None = None
-        for update in updates:
-            msg = update.get("message") or update.get("channel_post")
-            if not msg:
-                continue
-            chat = msg.get("chat", {})
-            if str(chat.get("id")) == activity_id or chat.get("username") == activity_id:
-                matched += 1
-                ts = msg.get("date", 0)
-                if last_ts is None or ts > last_ts:
-                    last_ts = ts
-        print(f"getUpdates: {len(updates)} update totali, {matched} per {activity_id}")
-        if last_ts is not None:
-            iso = datetime.datetime.fromtimestamp(last_ts, tz=datetime.timezone.utc).astimezone().isoformat()
-            print(f"Ultimo messaggio rilevato alle: {iso}")
-            return last_ts >= threshold
-        return False
-    except Exception as e:
-        print(f"Avviso: impossibile verificare l'attività ({e}). Salto il quiz per sicurezza.", file=sys.stderr)
-        return True
 
 
 def fetch_random_episode() -> dict:
@@ -498,11 +443,6 @@ def main() -> None:
             quiz, episode_ref = generate_quiz_content()
             print_quiz(quiz, episode_ref, index=i if args.dry_run > 1 else None)
         return
-
-    print(f"Verifico attività recente in {TELEGRAM_ACTIVITY_CHAT_ID}...")
-    if has_recent_activity():
-        print(f"Attività recente rilevata in {TELEGRAM_ACTIVITY_CHAT_ID}. Quiz saltato per non interrompere la conversazione.")
-        sys.exit(0)
 
     print("Scarico il feed RSS...")
     quiz, episode_ref = generate_valid_quiz()

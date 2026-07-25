@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -264,129 +263,6 @@ class TestSendEpisodeReference(unittest.TestCase):
             )
         self.assertIsNone(result)
         mock_post.assert_not_called()
-
-
-class TestHasRecentActivity(unittest.TestCase):
-    def _make_update(self, chat_id, username, timestamp, update_id=1):
-        return {
-            "update_id": update_id,
-            "message": {
-                "chat": {"id": chat_id, "username": username},
-                "date": timestamp,
-            },
-        }
-
-    def _make_response(self, updates):
-        r = MagicMock()
-        r.json.return_value = {"result": updates}
-        return r
-
-    @patch("quiz_bot.requests.get")
-    def test_returns_true_on_recent_message(self, mock_get):
-        mock_get.return_value = self._make_response(
-            [self._make_update(-100123, "test_chat", int(time.time()) - 1800)]
-        )
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
-             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": "240"}):
-            self.assertTrue(quiz_bot.has_recent_activity())
-
-    @patch("quiz_bot.requests.get")
-    def test_uses_negative_offset(self, mock_get):
-        """Regressione: offset=-100 serve a non consumare gli update dalla coda."""
-        mock_get.return_value = self._make_response([])
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
-            quiz_bot.has_recent_activity()
-        self.assertEqual(mock_get.call_count, 1)
-        params = mock_get.call_args.kwargs["params"]
-        self.assertEqual(params["offset"], -100)
-
-    @patch("quiz_bot.requests.get")
-    def test_returns_false_when_no_recent_message(self, mock_get):
-        mock_get.return_value = self._make_response(
-            [self._make_update(-100123, "test_chat", int(time.time()) - 7 * 3600)]
-        )
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
-            self.assertFalse(quiz_bot.has_recent_activity())
-
-    @patch("quiz_bot.requests.get", side_effect=Exception("timeout"))
-    def test_returns_true_on_network_error(self, _):
-        self.assertTrue(quiz_bot.has_recent_activity())
-
-    @patch("quiz_bot.requests.get")
-    def test_ignores_messages_from_other_chats(self, mock_get):
-        mock_get.return_value = self._make_response(
-            [self._make_update(-999, "altro_chat", int(time.time()) - 1)]
-        )
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
-            self.assertFalse(quiz_bot.has_recent_activity())
-
-    @patch("quiz_bot.requests.get")
-    def test_reads_window_from_env_short(self, mock_get):
-        """Con finestra 30min un messaggio di 60min fa NON è recente."""
-        mock_get.return_value = self._make_response(
-            [self._make_update(-100123, "test_chat", int(time.time()) - 60 * 60)]
-        )
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
-             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": "30"}):
-            self.assertFalse(quiz_bot.has_recent_activity())
-
-    @patch("quiz_bot.requests.get")
-    def test_reads_window_from_env_match(self, mock_get):
-        """Con finestra 30min un messaggio di 10min fa è recente."""
-        mock_get.return_value = self._make_response(
-            [self._make_update(-100123, "test_chat", int(time.time()) - 10 * 60)]
-        )
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
-             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": "30"}):
-            self.assertTrue(quiz_bot.has_recent_activity())
-
-    @patch("quiz_bot.requests.get")
-    def test_uses_latest_of_multiple_messages(self, mock_get):
-        """Se la coda ha più messaggi, usa il più recente anche se preceduto da uno vecchio."""
-        old = self._make_update(-100123, "test_chat", int(time.time()) - 7 * 3600, update_id=1)
-        recent = self._make_update(-100123, "test_chat", int(time.time()) - 60, update_id=2)
-        mock_get.return_value = self._make_response([old, recent])
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"):
-            self.assertTrue(quiz_bot.has_recent_activity())
-
-    @patch("quiz_bot.requests.get")
-    def test_empty_window_env_falls_back_to_default(self, mock_get):
-        """Regressione: TELEGRAM_ACTIVITY_WINDOW_MINUTES="" non deve sollevare ValueError.
-
-        GitHub Actions inietta la variabile anche quando la `vars.*` sorgente
-        è assente, con valore stringa vuota. La lettura deve cadere sul default
-        (240 minuti) invece di tentare `float("")`.
-        """
-        mock_get.return_value = self._make_response(
-            [self._make_update(-100123, "test_chat", int(time.time()) - 60)]
-        )
-        with patch.object(quiz_bot, "TELEGRAM_ACTIVITY_CHAT_ID", "@test_chat"), \
-             patch.dict(os.environ, {"TELEGRAM_ACTIVITY_WINDOW_MINUTES": ""}):
-            self.assertTrue(quiz_bot.has_recent_activity())
-
-
-class TestEnvFloat(unittest.TestCase):
-    def test_returns_default_when_unset(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("QB_TEST_VAR", None)
-            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 42.0)
-
-    def test_returns_default_when_empty(self):
-        with patch.dict(os.environ, {"QB_TEST_VAR": ""}):
-            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 42.0)
-
-    def test_returns_default_when_whitespace(self):
-        with patch.dict(os.environ, {"QB_TEST_VAR": "   "}):
-            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 42.0)
-
-    def test_parses_value(self):
-        with patch.dict(os.environ, {"QB_TEST_VAR": "7.5"}):
-            self.assertEqual(quiz_bot._env_float("QB_TEST_VAR", 42.0), 7.5)
-
-    def test_raises_on_non_numeric(self):
-        with patch.dict(os.environ, {"QB_TEST_VAR": "abc"}):
-            with self.assertRaises(ValueError):
-                quiz_bot._env_float("QB_TEST_VAR", 42.0)
 
 
 class TestValidateQuiz(unittest.TestCase):
