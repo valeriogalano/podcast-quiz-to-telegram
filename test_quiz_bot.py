@@ -90,8 +90,17 @@ class TestFetchGithubScript(unittest.TestCase):
 class TestCallClaude(unittest.TestCase):
     def _make_message(self, text):
         msg = MagicMock()
-        msg.content = [MagicMock(text=text)]
+        msg.content = [MagicMock(type="text", text=text)]
         return msg
+
+    @patch("quiz_bot.anthropic.Anthropic")
+    def test_skips_a_leading_thinking_block(self, mock_anthropic):
+        """Un blocco di ragionamento in testa non ha `.text`: va saltato."""
+        payload = {"question": "?", "options": ["a", "b"], "correct_option_ids": [0]}
+        msg = self._make_message(json.dumps(payload))
+        msg.content.insert(0, MagicMock(type="thinking", spec=["type"]))
+        mock_anthropic.return_value.messages.create.return_value = msg
+        self.assertEqual(quiz_bot.call_claude("system", "user")["question"], "?")
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_parses_valid_json(self, mock_anthropic):
@@ -103,7 +112,7 @@ class TestCallClaude(unittest.TestCase):
         self.assertEqual(result["question"], "?")
         # Il modello viene iniettato nel dict per essere poi mostrato nella
         # description del poll (trasparenza sulla provenienza del quiz).
-        self.assertEqual(result["model"], "claude-haiku-4-5-20251001")
+        self.assertEqual(result["model"], "claude-sonnet-5-5")
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_strips_code_fences(self, mock_anthropic):
@@ -112,7 +121,7 @@ class TestCallClaude(unittest.TestCase):
         mock_anthropic.return_value.messages.create.return_value = self._make_message(wrapped)
         result = quiz_bot.call_claude("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertEqual(result["model"], "claude-haiku-4-5-20251001")
+        self.assertEqual(result["model"], "claude-sonnet-5-5")
 
     @patch("quiz_bot.anthropic.Anthropic")
     def test_exits_on_invalid_json(self, mock_anthropic):
@@ -170,11 +179,11 @@ class TestSendPoll(unittest.TestCase):
             "question": "Q?",
             "options": ["A", "B"],
             "correct_option_ids": [0],
-            "model": "claude-haiku-4-5-20251001",
+            "model": "claude-sonnet-5-5",
         }
         quiz_bot.send_poll(quiz)
         payload = mock_post.call_args.kwargs["json"]
-        self.assertIn("claude-haiku-4-5-20251001", payload["description"])
+        self.assertIn("claude-sonnet-5-5", payload["description"])
         self.assertIn("Generato con", payload["description"])
 
     @patch("quiz_bot.requests.post")
@@ -313,7 +322,7 @@ class TestValidateQuiz(unittest.TestCase):
         quiz = {
             "question": "Q",
             "description": "D" * 180,
-            "model": "claude-haiku-4-5-20251001",
+            "model": "claude-sonnet-5-5",
             "options": ["A", "B"],
             "correct_option_ids": [0],
         }
@@ -390,7 +399,7 @@ class TestCallGemini(unittest.TestCase):
         )
         result = quiz_bot.call_gemini("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertEqual(result["model"], "gemini-3.5-flash")
+        self.assertEqual(result["model"], "gemini-3.8-flash")
 
     @patch("quiz_bot.genai.Client")
     def test_strips_code_fences(self, mock_client):
@@ -399,7 +408,7 @@ class TestCallGemini(unittest.TestCase):
         mock_client.return_value.models.generate_content.return_value = self._make_response(wrapped)
         result = quiz_bot.call_gemini("system", "user")
         self.assertEqual(result["question"], "?")
-        self.assertEqual(result["model"], "gemini-3.5-flash")
+        self.assertEqual(result["model"], "gemini-3.8-flash")
 
     @patch("quiz_bot.genai.Client")
     def test_exits_on_invalid_json(self, mock_client):
