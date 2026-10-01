@@ -175,7 +175,7 @@ class TestSendPoll(unittest.TestCase):
         quiz_bot.send_poll(quiz)
         payload = mock_post.call_args.kwargs["json"]
         self.assertIn("claude-haiku-4-5-20251001", payload["description"])
-        self.assertIn("generato con", payload["description"])
+        self.assertIn("Generato con", payload["description"])
 
     @patch("quiz_bot.requests.post")
     def test_no_description_field_when_empty(self, mock_post):
