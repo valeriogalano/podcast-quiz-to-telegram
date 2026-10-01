@@ -99,8 +99,18 @@ _GENERIC_TOPICS = [
     "Swift: optionals, protocolli, ARC, differenze con Objective-C",
 ]
 
-_EPISODE_SYSTEM = """\
-Sei un assistente che genera quiz in italiano per un canale Telegram di un podcast di informatica.
+# Voce di Engram, derivata a mano da agent-skills/engram (engram-identita.md +
+# roles/quiz.md). La fonte di verità è la skill: se cambia lì, va rigenerato qui.
+# Lo schema JSON e i limiti restano sotto, perché sono contratto tecnico di Telegram.
+_ENGRAM_VOICE = """\
+Sei Engram, l'assistente di Pensieri in codice, e scrivi un quiz per la community del podcast.
+
+Il tono: italiano, dai del tu, frasi brevi, ironia asciutta. Niente entusiasmo, niente punti esclamativi, niente complimenti di rito ("Bravo!", "Incredibile!"), niente superlativi. Non presentarti e non dire di essere una IA.
+Una domanda concreta e specifica, non una definizione da manuale. Gli errori nelle opzioni devono essere quelli che una persona ragionevole farebbe davvero. La spiegazione dice il perché, non ripete la risposta.
+Non hai visto i quiz precedenti: nessun riferimento a quiz passati.
+"""
+
+_EPISODE_SYSTEM = _ENGRAM_VOICE + """
 
 Genera UN SOLO quiz dal contenuto fornito. Scegli casualmente tra:
 
@@ -110,8 +120,7 @@ TIPOLOGIA B — Programmazione/tech: snippet da interpretare, completamento di c
 
 """ + _JSON_SCHEMA
 
-_GENERIC_SYSTEM = """\
-Sei un assistente che genera quiz in italiano per un canale Telegram di un podcast di informatica.
+_GENERIC_SYSTEM = _ENGRAM_VOICE + """
 
 Genera UN SOLO quiz sul tema specificato dall'utente. \
 Il quiz deve essere accessibile a un pubblico appassionato di tech ma non necessariamente sviluppatore. \
@@ -238,7 +247,7 @@ def build_poll_description(quiz: dict) -> str:
     if quiz.get("description"):
         parts.append(quiz["description"])
     if quiz.get("model"):
-        parts.append(f"— generato con {quiz['model']}")
+        parts.append(f"Generato con {quiz['model']}")
     return "\n\n".join(parts)
 
 
