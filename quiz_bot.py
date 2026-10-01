@@ -38,8 +38,8 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 # trasparenza verso il pubblico del canale.
 # Cfr. https://docs.anthropic.com/en/docs/about-claude/models/overview
 # e https://ai.google.dev/gemini-api/docs/models.
-_CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-_GEMINI_MODEL = "gemini-3.5-flash"
+_CLAUDE_MODEL = "claude-sonnet-5-5"
+_GEMINI_MODEL = "gemini-3.8-flash"
 
 # Limiti dell'API Telegram Bot per i poll di tipo quiz.
 # Cfr. https://core.telegram.org/bots/api#sendpoll
@@ -180,11 +180,13 @@ def call_claude(system: str, user: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
         model=_CLAUDE_MODEL,
-        max_tokens=1000,
+        # Il ragionamento del modello consuma lo stesso budget della risposta.
+        max_tokens=4096,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    raw = message.content[0].text.strip()
+    # Il modello può mettere in testa un blocco di ragionamento: conta solo il testo.
+    raw = "".join(b.text for b in message.content if b.type == "text").strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
