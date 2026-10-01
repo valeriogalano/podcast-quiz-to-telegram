@@ -180,7 +180,8 @@ def call_claude(system: str, user: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
         model=_CLAUDE_MODEL,
-        max_tokens=1000,
+        # Il ragionamento del modello consuma lo stesso budget della risposta.
+        max_tokens=4096,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
