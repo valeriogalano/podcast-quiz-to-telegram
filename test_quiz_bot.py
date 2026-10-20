@@ -229,49 +229,38 @@ class TestSendPoll(unittest.TestCase):
         self.assertNotIn("allows_multiple_answers", payload)
 
 
-class TestSendEpisodeReference(unittest.TestCase):
+class TestEpisodeButton(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0]}
+
     @patch("quiz_bot.requests.post")
-    def test_sends_link_as_html_in_reply(self, mock_post):
-        mock_post.return_value.json.return_value = {"result": {"message_id": 7}}
+    def test_adds_url_button_with_episode_link(self, mock_post):
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
         ep = {"title": "Bluetooth", "link": "https://example.com/ep"}
-        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
-            result = quiz_bot.send_episode_reference(ep, reply_to_message_id=42)
-        self.assertEqual(result["result"]["message_id"], 7)
+        quiz_bot.send_poll(self.QUIZ, ep)
         payload = mock_post.call_args.kwargs["json"]
-        self.assertEqual(payload["parse_mode"], "HTML")
-        # Il messaggio è agganciato al poll.
-        self.assertEqual(payload["reply_parameters"], {"message_id": 42})
-        # Titolo reso come link cliccabile (anteprima lasciata di default).
-        self.assertIn('<a href="https://example.com/ep">Bluetooth</a>', payload["text"])
-        self.assertNotIn("link_preview_options", payload)
+        button = payload["reply_markup"]["inline_keyboard"][0][0]
+        self.assertEqual(button["url"], "https://example.com/ep")
+        self.assertIn("Ascolta", button["text"])
 
     @patch("quiz_bot.requests.post")
-    def test_title_only_when_no_link(self, mock_post):
+    def test_no_button_without_http_link(self, mock_post):
         mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
-        ep = {"title": "Senza link", "link": None}
-        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
-            quiz_bot.send_episode_reference(ep, reply_to_message_id=1)
-        payload = mock_post.call_args.kwargs["json"]
-        self.assertIn("Senza link", payload["text"])
-        self.assertNotIn("<a href", payload["text"])
+        for ep in (None, {"title": "T", "link": None}, {"title": "T", "link": "ftp://x"}):
+            quiz_bot.send_poll(self.QUIZ, ep)
+            self.assertNotIn("reply_markup", mock_post.call_args.kwargs["json"])
 
     @patch("quiz_bot.requests.post")
-    def test_escapes_html_in_title(self, mock_post):
-        mock_post.return_value.json.return_value = {"result": {"message_id": 1}}
-        ep = {"title": "A & B <C>", "link": "https://example.com/ep"}
-        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
-            quiz_bot.send_episode_reference(ep, reply_to_message_id=1)
-        payload = mock_post.call_args.kwargs["json"]
-        self.assertIn("A &amp; B &lt;C&gt;", payload["text"])
-
-    @patch("quiz_bot.requests.post")
-    def test_returns_none_when_empty(self, mock_post):
-        with patch.object(quiz_bot, "TELEGRAM_CHAT_ID", "@chan"):
-            result = quiz_bot.send_episode_reference(
-                {"title": None, "link": None}, reply_to_message_id=1
-            )
-        self.assertIsNone(result)
-        mock_post.assert_not_called()
+    def test_retries_without_button_on_client_error(self, mock_post):
+        """Se Telegram rifiuta il poll col pulsante, il quiz esce comunque senza."""
+        rejected, ok = MagicMock(status_code=400, text="bad button"), MagicMock(status_code=200)
+        ok.json.return_value = {"result": {"message_id": 5}}
+        mock_post.side_effect = [rejected, ok]
+        result = quiz_bot.send_poll(self.QUIZ, {"title": "T", "link": "https://example.com/ep"})
+        self.assertEqual(result["result"]["message_id"], 5)
+        self.assertEqual(mock_post.call_count, 2)
+        self.assertNotIn("reply_markup", mock_post.call_args.kwargs["json"])
+        rejected.raise_for_status.assert_not_called()
 
 
 class TestValidateQuiz(unittest.TestCase):
