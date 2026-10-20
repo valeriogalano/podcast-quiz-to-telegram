@@ -33,4 +33,4 @@ Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRA
 
 - 75% delle esecuzioni: quiz generico su informatica/programmazione
 - 25% delle esecuzioni: quiz basato su un episodio casuale del feed RSS (trascrizione + script GitHub se disponibile)
-- Per i quiz basati su un episodio, dopo il poll viene pubblicato un messaggio separato (in reply al poll) con il riferimento all'episodio: titolo + link cliccabile alla pagina del sito (dal campo `link` del feed RSS), con anteprima. Se l'invio del messaggio fallisce, il quiz resta comunque pubblicato.
+- Per i quiz basati su un episodio, il poll ha un pulsante URL "🎧 Ascolta l'episodio" che apre la pagina dell'episodio sul sito (dal campo `link` del feed RSS, solo se http/https). È un pulsante URL e non callback, perché il bot non resta in ascolto. Se Telegram rifiuta il poll per un errore 4xx, l'invio si ripete senza pulsante, così il quiz viene pubblicato comunque.

@@ -1,5 +1,4 @@
 import datetime
-import html
 import json
 import os
 import re
@@ -253,7 +252,7 @@ def build_poll_description(quiz: dict) -> str:
     return "\n\n".join(parts)
 
 
-def send_poll(quiz: dict) -> dict:
+def send_poll(quiz: dict, episode_ref: dict | None = None) -> dict:
     correct_ids = quiz["correct_option_ids"]
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
@@ -276,47 +275,21 @@ def send_poll(quiz: dict) -> dict:
     if len(correct_ids) > 1:
         # Bot API 9.0: i quiz multi-risposta richiedono allows_multiple_answers.
         payload["allows_multiple_answers"] = True
-    resp = requests.post(
-        f"{TELEGRAM_API}/sendPoll",
-        json=payload,
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-def send_episode_reference(episode_ref: dict, reply_to_message_id: int) -> dict | None:
-    """Pubblica un messaggio col riferimento all'episodio, in reply al poll.
-
-    I poll Telegram non rendono link cliccabili, quindi il riferimento va in un
-    `sendMessage` separato (testo fino a 4096 caratteri, formattazione HTML).
-    Se il feed espone il `link` della pagina dell'episodio, il titolo diventa un
-    link cliccabile e Telegram ne mostra l'anteprima; altrimenti si pubblica il
-    solo titolo. Il messaggio è agganciato al poll tramite `reply_parameters`.
-
-    Ritorna la risposta di Telegram, o None se non c'è alcun riferimento da
-    pubblicare.
-    """
-    title = episode_ref.get("title")
-    link = episode_ref.get("link")
-    if not title and not link:
-        return None
-    if link:
-        text = f'📻 Episodio: <a href="{html.escape(link, quote=True)}">{html.escape(title or link)}</a>'
-    else:
-        text = f"📻 Episodio: {html.escape(title)}"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML",
-        # Aggancia il messaggio al poll così resta visivamente collegato.
-        "reply_parameters": {"message_id": reply_to_message_id},
-    }
-    resp = requests.post(
-        f"{TELEGRAM_API}/sendMessage",
-        json=payload,
-        timeout=10,
-    )
+    link = (episode_ref or {}).get("link") or ""
+    if link.startswith(("http://", "https://")):
+        # Il link all'episodio va in un pulsante URL sotto il poll: i poll non
+        # rendono link cliccabili, e il pulsante non richiede un backend che
+        # risponda ai callback (il bot gira su Actions ed esce subito).
+        payload["reply_markup"] = {
+            "inline_keyboard": [[{"text": "🎧 Ascolta l'episodio", "url": link}]]
+        }
+    resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
+    if "reply_markup" in payload and 400 <= resp.status_code < 500:
+        # Un 4xx vuol dire che il poll non è partito: se la colpa è del
+        # pulsante, il quiz va pubblicato comunque, senza.
+        print(f"Avviso: poll rifiutato col pulsante ({resp.text}), riprovo senza.", file=sys.stderr)
+        del payload["reply_markup"]
+        resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
     resp.raise_for_status()
     return resp.json()
 
@@ -459,16 +432,7 @@ def main() -> None:
     quiz, episode_ref = generate_valid_quiz()
 
     print("Invio il poll su Telegram...")
-    poll_message_id = send_poll(quiz)["result"]["message_id"]
-
-    if episode_ref:
-        # Il riferimento all'episodio va in un messaggio a parte: se questo
-        # fallisce il quiz è comunque già pubblicato, quindi non interrompiamo.
-        print("Pubblico il riferimento all'episodio...")
-        try:
-            send_episode_reference(episode_ref, poll_message_id)
-        except Exception as e:
-            print(f"Avviso: impossibile pubblicare il riferimento all'episodio ({e}).", file=sys.stderr)
+    poll_message_id = send_poll(quiz, episode_ref)["result"]["message_id"]
 
     episode_title = episode_ref["title"] if episode_ref else None
     correct = quiz["options"][quiz["correct_option_ids"][0]]
