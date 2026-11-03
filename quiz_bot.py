@@ -1,9 +1,11 @@
 import datetime
+import html
 import json
 import os
 import re
 import random
 import sys
+from html.parser import HTMLParser
 
 try:
     from dotenv import load_dotenv
@@ -136,10 +138,38 @@ def fetch_random_episode() -> dict:
     return random.choice(feed.entries)
 
 
+class _TextExtractor(HTMLParser):
+    _BLOCKS = {"p", "br", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "tr", "blockquote"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._BLOCKS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def html_to_text(value: str) -> str:
+    """Le note degli episodi nel feed sono HTML: i tag consumerebbero parte dei
+    caratteri mandati al modello. Resta il testo, con un a capo per blocco."""
+    if "<" not in value:
+        return html.unescape(value).strip()
+    parser = _TextExtractor()
+    parser.feed(value)
+    parser.close()
+    text = "".join(parser.parts)
+    lines = (" ".join(line.split()) for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
+
+
 def extract_transcript(episode: dict) -> str:
     if hasattr(episode, "content") and episode.content:
-        return episode.content[0].get("value", "")
-    return episode.get("summary") or episode.get("itunes_transcript") or ""
+        return html_to_text(episode.content[0].get("value", ""))
+    return html_to_text(episode.get("summary") or episode.get("itunes_transcript") or "")
 
 
 def fetch_github_script(title: str) -> str:
