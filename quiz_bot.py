@@ -46,6 +46,11 @@ _TELEGRAM_QUESTION_MAX = 300
 _TELEGRAM_DESCRIPTION_MAX = 200
 _TELEGRAM_OPTION_MAX = 100
 _TELEGRAM_EXPLANATION_MAX = 200
+
+# Timeout espliciti: senza, un provider o il feed che non rispondono tengono
+# il job appeso fino al limite di 6 ore di Actions (run #538).
+_AI_TIMEOUT_SECONDS = 60
+_FEED_TIMEOUT_SECONDS = 15
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -130,7 +135,13 @@ Preferisci domande su comportamenti inattesi, curiosità, errori comuni o concet
 
 
 def fetch_random_episode() -> dict:
-    feed = feedparser.parse(FEED_RSS_URL)
+    # feedparser scarica senza timeout: si scarica qui e gli si passa il testo
+    try:
+        resp = requests.get(FEED_RSS_URL, timeout=_FEED_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise RuntimeError(f"feed RSS non raggiungibile: {e}") from e
+    feed = feedparser.parse(resp.content)
     if not feed.entries:
         raise RuntimeError("nessun episodio trovato nel feed RSS")
     return random.choice(feed.entries)
@@ -176,7 +187,7 @@ def fetch_github_script(title: str) -> str:
 
 
 def call_claude(system: str, user: str) -> dict:
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=_AI_TIMEOUT_SECONDS, max_retries=2)
     message = client.messages.create(
         model=_CLAUDE_MODEL,
         # Il ragionamento del modello consuma lo stesso budget della risposta.
@@ -213,7 +224,11 @@ def call_ai(system: str, user: str, provider: str | None = None) -> dict:
 
 
 def call_gemini(system: str, user: str) -> dict:
-    client = genai.Client(api_key=GOOGLE_API_KEY)
+    client = genai.Client(
+        api_key=GOOGLE_API_KEY,
+        # google-genai vuole il timeout in millisecondi
+        http_options=genai_types.HttpOptions(timeout=_AI_TIMEOUT_SECONDS * 1000),
+    )
     response = client.models.generate_content(
         model=_GEMINI_MODEL,
         config=genai_types.GenerateContentConfig(
