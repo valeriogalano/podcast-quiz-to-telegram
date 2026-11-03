@@ -435,7 +435,7 @@ def main() -> None:
     poll_message_id = send_poll(quiz, episode_ref)["result"]["message_id"]
 
     episode_title = episode_ref["title"] if episode_ref else None
-    correct = quiz["options"][quiz["correct_option_ids"][0]]
+    correct = " | ".join(quiz["options"][i] for i in quiz["correct_option_ids"])
     print(
         f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
         f"type={'episodio' if episode_ref else 'generico'} "
