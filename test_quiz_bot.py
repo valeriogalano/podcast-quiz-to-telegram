@@ -554,7 +554,9 @@ class TestGenerateQuizContent(unittest.TestCase):
 
 
 class TestGenerateValidQuiz(unittest.TestCase):
-    """Copre il loop di retry senza chiamare call_claude (stub diretto di generate_quiz_content)."""
+    """Copre il loop di retry: la preparazione è uno stub, call_ai è mockata."""
+
+    REQUEST = ("system", "user", None)
 
     def _valid_quiz(self):
         return {
@@ -565,26 +567,30 @@ class TestGenerateValidQuiz(unittest.TestCase):
         }
 
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
-    def test_returns_on_first_valid_attempt(self, mock_gen, _):
-        mock_gen.return_value = (self._valid_quiz(), None)
+    @patch("quiz_bot.prepare_quiz_request")
+    @patch("quiz_bot.call_ai")
+    def test_returns_on_first_valid_attempt(self, mock_gen, mock_prepare, _):
+        mock_prepare.return_value = self.REQUEST
+        mock_gen.return_value = self._valid_quiz()
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
             quiz, episode_ref = quiz_bot.generate_valid_quiz()
         self.assertEqual(quiz["question"], "Q?")
         self.assertIsNone(episode_ref)
         self.assertEqual(mock_gen.call_count, 1)
-        mock_gen.assert_called_once_with("google")
+        mock_gen.assert_called_once_with("system", "user", "google")
 
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
-    def test_retries_until_valid(self, mock_gen, _):
+    @patch("quiz_bot.prepare_quiz_request")
+    @patch("quiz_bot.call_ai")
+    def test_retries_until_valid(self, mock_gen, mock_prepare, _):
         invalid = {
             "question": "Q" * 400,  # oltre limite 300
             "options": ["A", "B"],
             "correct_option_ids": [0],
         }
         ep_ref = {"title": "Ep 1", "link": "https://example.com/ep"}
-        mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), ep_ref)]
+        mock_prepare.return_value = ("system", "user", ep_ref)
+        mock_gen.side_effect = [invalid, self._valid_quiz()]
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
             quiz, episode_ref = quiz_bot.generate_valid_quiz()
         self.assertEqual(quiz["question"], "Q?")
@@ -592,23 +598,27 @@ class TestGenerateValidQuiz(unittest.TestCase):
         self.assertEqual(mock_gen.call_count, 2)
 
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
-    def test_exits_after_max_retries(self, mock_gen, _):
+    @patch("quiz_bot.prepare_quiz_request")
+    @patch("quiz_bot.call_ai")
+    def test_exits_after_max_retries(self, mock_gen, mock_prepare, _):
         invalid = {
             "question": "Q" * 400,
             "options": ["A", "B"],
             "correct_option_ids": [0],
         }
-        mock_gen.return_value = (invalid, None)
+        mock_prepare.return_value = self.REQUEST
+        mock_gen.return_value = invalid
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), self.assertRaises(SystemExit):
             quiz_bot.generate_valid_quiz()
         self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES)
 
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
-    def test_retries_provider_errors_before_next_provider(self, mock_gen, _):
+    @patch("quiz_bot.prepare_quiz_request")
+    @patch("quiz_bot.call_ai")
+    def test_retries_provider_errors_before_next_provider(self, mock_gen, mock_prepare, _):
         failures = [quiz_bot.QuizProviderError("503")] * quiz_bot._MAX_QUIZ_RETRIES
-        mock_gen.side_effect = [*failures, (self._valid_quiz(), None)]
+        mock_prepare.return_value = self.REQUEST
+        mock_gen.side_effect = [*failures, self._valid_quiz()]
 
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google,anthropic"):
             quiz, episode_ref = quiz_bot.generate_valid_quiz()
@@ -617,9 +627,11 @@ class TestGenerateValidQuiz(unittest.TestCase):
         self.assertIsNone(episode_ref)
         self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES + 1)
         self.assertEqual(
-            [call.args[0] for call in mock_gen.call_args_list],
+            [call.args[2] for call in mock_gen.call_args_list],
             ["google"] * quiz_bot._MAX_QUIZ_RETRIES + ["anthropic"],
         )
+        # la scelta dell'episodio o del tema non si ripete fra un tentativo e l'altro
+        mock_prepare.assert_called_once()
 
 
 if __name__ == "__main__":
