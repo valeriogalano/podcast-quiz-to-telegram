@@ -4,6 +4,7 @@ import os
 import re
 import random
 import sys
+import time
 
 try:
     from dotenv import load_dotenv
@@ -46,6 +47,8 @@ _TELEGRAM_QUESTION_MAX = 300
 _TELEGRAM_DESCRIPTION_MAX = 200
 _TELEGRAM_OPTION_MAX = 100
 _TELEGRAM_EXPLANATION_MAX = 200
+# Un 429 dice quanto aspettare: si aspetta una volta sola, al massimo così.
+_TELEGRAM_MAX_FLOOD_WAIT = 60
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -252,6 +255,23 @@ def build_poll_description(quiz: dict) -> str:
     return "\n\n".join(parts)
 
 
+def _post_poll(payload: dict):
+    """POST di sendPoll. Su un 429 (flood control) aspetta `retry_after` e
+    ripete lo stesso payload una volta: il pulsante non c'entra, toglierlo e
+    riprovare subito fallirebbe di nuovo e il quiz, già pagato, andrebbe perso."""
+    resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
+    if resp.status_code == 429:
+        try:
+            wait = int(resp.json().get("parameters", {}).get("retry_after", 5))
+        except (ValueError, TypeError, AttributeError):
+            wait = 5
+        wait = max(1, min(wait, _TELEGRAM_MAX_FLOOD_WAIT))
+        print(f"Avviso: Telegram chiede di attendere {wait}s (429), riprovo.", file=sys.stderr)
+        time.sleep(wait)
+        resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
+    return resp
+
+
 def send_poll(quiz: dict, episode_ref: dict | None = None) -> dict:
     correct_ids = quiz["correct_option_ids"]
     payload = {
@@ -283,13 +303,13 @@ def send_poll(quiz: dict, episode_ref: dict | None = None) -> dict:
         payload["reply_markup"] = {
             "inline_keyboard": [[{"text": "🎧 Ascolta l'episodio", "url": link}]]
         }
-    resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
-    if "reply_markup" in payload and 400 <= resp.status_code < 500:
+    resp = _post_poll(payload)
+    if "reply_markup" in payload and 400 <= resp.status_code < 500 and resp.status_code != 429:
         # Un 4xx vuol dire che il poll non è partito: se la colpa è del
         # pulsante, il quiz va pubblicato comunque, senza.
         print(f"Avviso: poll rifiutato col pulsante ({resp.text}), riprovo senza.", file=sys.stderr)
         del payload["reply_markup"]
-        resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
+        resp = _post_poll(payload)
     resp.raise_for_status()
     return resp.json()
 
