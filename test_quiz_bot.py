@@ -337,9 +337,55 @@ class TestValidateQuiz(unittest.TestCase):
         errors = quiz_bot.validate_quiz(quiz)
         self.assertTrue(any("explanation" in e for e in errors))
 
-    def test_empty_quiz_returns_no_errors(self):
-        """Nessun campo → nessun limite superato, lista vuota."""
-        self.assertEqual(quiz_bot.validate_quiz({}), [])
+    def test_empty_quiz_is_invalid(self):
+        """Un quiz senza campi non è pubblicabile: Telegram lo rifiuterebbe."""
+        self.assertNotEqual(quiz_bot.validate_quiz({}), [])
+
+
+class TestValidateQuizStructure(unittest.TestCase):
+    BASE = {
+        "question": "Domanda?",
+        "options": ["A", "B", "C"],
+        "correct_option_ids": [0],
+        "explanation": "Perché sì.",
+    }
+
+    def assertInvalid(self, **changes):
+        quiz = {**self.BASE, **changes}
+        quiz = {k: v for k, v in quiz.items() if v is not ...}
+        self.assertNotEqual(quiz_bot.validate_quiz(quiz), [], quiz)
+
+    def test_base_is_valid(self):
+        self.assertEqual(quiz_bot.validate_quiz(dict(self.BASE)), [])
+
+    def test_correct_ids(self):
+        for ids in ([7], [-1], [], 0, [0, 0], ["0"], [True], [0, 1, 2], None):
+            with self.subTest(ids=ids):
+                self.assertInvalid(correct_option_ids=ids)
+
+    def test_options(self):
+        for options in (["A", "A", "B"], ["A", " a ", "B"], ["A"], [str(i) for i in range(13)],
+                        "A,B,C", ["A", "", "B"], ["A", None, "B"], None):
+            with self.subTest(options=options):
+                self.assertInvalid(options=options)
+
+    def test_question(self):
+        for question in ("", "   ", None, 42):
+            with self.subTest(question=question):
+                self.assertInvalid(question=question)
+
+    def test_missing_fields(self):
+        for field in ("question", "options", "correct_option_ids"):
+            with self.subTest(field=field):
+                self.assertInvalid(**{field: ...})
+
+    def test_explanation(self):
+        self.assertInvalid(explanation=["no"])
+        self.assertInvalid(explanation="a\nb\nc\nd")
+        self.assertEqual(quiz_bot.validate_quiz({**self.BASE, "explanation": "a\nb\nc"}), [])
+
+    def test_multiple_correct_but_not_all(self):
+        self.assertEqual(quiz_bot.validate_quiz({**self.BASE, "correct_option_ids": [0, 2]}), [])
 
 
 class TestPrintQuiz(unittest.TestCase):
@@ -620,6 +666,21 @@ class TestGenerateValidQuiz(unittest.TestCase):
             [call.args[0] for call in mock_gen.call_args_list],
             ["google"] * quiz_bot._MAX_QUIZ_RETRIES + ["anthropic"],
         )
+
+
+class TestMalformedQuizIsRetried(unittest.TestCase):
+    @patch("quiz_bot.generate_quiz_content")
+    def test_a_malformed_quiz_is_regenerated_not_a_crash(self, mock_gen):
+        valid = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0], "explanation": "E"}
+        mock_gen.side_effect = [
+            ({"question": "Q?", "options": ["A", "B"], "correct_option_ids": 0}, None),
+            ({"question": "Q?", "correct_option_ids": [0]}, None),
+            (valid, None),
+        ]
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), patch("builtins.print"):
+            quiz, _ = quiz_bot.generate_valid_quiz()
+        self.assertEqual(valid, quiz)
+        self.assertEqual(3, mock_gen.call_count)
 
 
 if __name__ == "__main__":
