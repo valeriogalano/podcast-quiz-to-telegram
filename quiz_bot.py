@@ -288,7 +288,9 @@ def send_poll(quiz: dict, episode_ref: dict | None = None) -> dict:
         # Un 4xx vuol dire che il poll non è partito: se la colpa è del
         # pulsante, il quiz va pubblicato comunque, senza.
         print(f"Avviso: poll rifiutato col pulsante ({resp.text}), riprovo senza.", file=sys.stderr)
-        del payload["reply_markup"]
+        # una copia, non il dict già inviato: chi lo ha ricevuto (e un mock nei
+        # test) deve continuare a vedere il pulsante del primo invio
+        payload = {k: v for k, v in payload.items() if k != "reply_markup"}
         resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
     resp.raise_for_status()
     return resp.json()
