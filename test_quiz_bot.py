@@ -55,7 +55,7 @@ class TestFetchGithubScript(unittest.TestCase):
     def test_returns_best_matching_script(self, mock_get):
         files_resp = MagicMock()
         files_resp.json.return_value = [
-            {"name": "episodio-bluetooth.yml", "download_url": "http://example.com/bt.yml"},
+            {"name": "episodio-origine-bluetooth.yml", "download_url": "http://example.com/bt.yml"},
             {"name": "altro-episodio.yml", "download_url": "http://example.com/altro.yml"},
         ]
         content_resp = MagicMock()
@@ -85,6 +85,34 @@ class TestFetchGithubScript(unittest.TestCase):
     def test_returns_empty_on_network_error(self, _):
         result = quiz_bot.fetch_github_script("qualsiasi titolo")
         self.assertEqual(result, "")
+
+
+class TestPickScript(unittest.TestCase):
+    FILES = [
+        {"name": "PIC150.yml"}, {"name": "PIC151.yml"}, {"name": "README.md"},
+        {"name": "il-futuro-del-web.yml"}, {"name": "intelligenza-artificiale-e-lavoro.yml"},
+    ]
+
+    def pick(self, title, link=""):
+        with patch.object(quiz_bot, "SCRIPT_EXTENSIONS", (".yml",)):
+            item = quiz_bot._pick_script(self.FILES, title, link)
+        return item and item["name"]
+
+    def test_the_episode_number_in_the_link_wins(self):
+        link = "https://pensieriincodice.it/episodes/151-il-second-brain"
+        self.assertEqual("PIC151.yml", self.pick("Il second brain", link))
+
+    def test_one_shared_word_is_not_a_match(self):
+        self.assertIsNone(self.pick("Il futuro della privacy"))
+
+    def test_most_title_words_are_a_match(self):
+        self.assertEqual("intelligenza-artificiale-e-lavoro.yml",
+                         self.pick("Intelligenza artificiale e lavoro"))
+
+    def test_a_tie_is_not_a_match(self):
+        files = [{"name": "rust-memoria.yml"}, {"name": "rust-sicurezza.yml"}]
+        with patch.object(quiz_bot, "SCRIPT_EXTENSIONS", (".yml",)):
+            self.assertIsNone(quiz_bot._pick_script(files, "Rust"))
 
 
 class TestCallClaude(unittest.TestCase):
