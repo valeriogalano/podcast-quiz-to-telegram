@@ -361,6 +361,10 @@ def validate_quiz(quiz: dict) -> list[str]:
 
 _MAX_QUIZ_RETRIES = 5
 
+# Codice d'uscita quando non si sa se il poll è uscito: diverso da 1 (fallito
+# di sicuro), perché rilanciare il run potrebbe pubblicare un secondo quiz.
+EXIT_UNCERTAIN = 3
+
 
 def generate_valid_quiz() -> tuple[dict, dict | None]:
     """Genera un quiz valido rispetto ai limiti Telegram provando i provider configurati."""
@@ -432,18 +436,32 @@ def main() -> None:
     quiz, episode_ref = generate_valid_quiz()
 
     print("Invio il poll su Telegram...")
-    poll_message_id = send_poll(quiz, episode_ref)["result"]["message_id"]
+    try:
+        poll_message_id = send_poll(quiz, episode_ref)["result"]["message_id"]
+    except requests.exceptions.ReadTimeout:
+        # La richiesta è partita e la risposta non è arrivata: Telegram può
+        # averla accettata. Ripeterla rischia un doppione, quindi non si ripete.
+        print(
+            "Esito incerto: timeout in attesa della risposta di Telegram, il poll potrebbe "
+            "essere stato pubblicato. Controlla il canale prima di rilanciare.",
+            file=sys.stderr,
+        )
+        sys.exit(EXIT_UNCERTAIN)
 
-    episode_title = episode_ref["title"] if episode_ref else None
-    correct = quiz["options"][quiz["correct_option_ids"][0]]
-    print(
-        f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
-        f"type={'episodio' if episode_ref else 'generico'} "
-        f"episode={episode_title!r} poll_id={poll_message_id} status=success\n"
-        f"  Q: {quiz['question']}\n"
-        f"  A: {correct}\n"
-        f"  💡 {quiz.get('explanation', '')}"
-    )
+    # il poll è uscito: un errore nel log non deve far sembrare fallito il run
+    try:
+        episode_title = episode_ref["title"] if episode_ref else None
+        correct = quiz["options"][quiz["correct_option_ids"][0]]
+        print(
+            f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
+            f"type={'episodio' if episode_ref else 'generico'} "
+            f"episode={episode_title!r} poll_id={poll_message_id} status=success\n"
+            f"  Q: {quiz['question']}\n"
+            f"  A: {correct}\n"
+            f"  💡 {quiz.get('explanation', '')}"
+        )
+    except Exception as e:
+        print(f"Avviso: log finale non riuscito ({e}).", file=sys.stderr)
     print("Quiz pubblicato con successo!")
 
 
