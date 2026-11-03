@@ -436,6 +436,25 @@ class TestCallAi(unittest.TestCase):
             quiz_bot.call_ai("system", "user", provider="unknown")
 
 
+class TestUsableProviders(unittest.TestCase):
+    def test_providers_without_a_key_are_skipped(self):
+        with patch.object(quiz_bot, "GOOGLE_API_KEY", ""), patch.object(quiz_bot, "ANTHROPIC_API_KEY", "k"), \
+                patch("builtins.print"):
+            self.assertEqual(["anthropic"], quiz_bot.usable_providers(["google", "anthropic"]))
+
+    def test_unknown_providers_are_left_for_call_ai_to_reject(self):
+        with patch.object(quiz_bot, "GOOGLE_API_KEY", "g"):
+            self.assertEqual(["google", "openai"], quiz_bot.usable_providers(["google", "openai"]))
+
+    @patch("quiz_bot.generate_quiz_content")
+    def test_no_usable_provider_exits_without_calling_any(self, mock_gen):
+        with patch.object(quiz_bot, "GOOGLE_API_KEY", ""), patch.object(quiz_bot, "ANTHROPIC_API_KEY", ""), \
+                patch.object(quiz_bot, "QUIZ_PROVIDER", "google,anthropic"), patch("builtins.print"), \
+                self.assertRaises(SystemExit):
+            quiz_bot.generate_valid_quiz()
+        mock_gen.assert_not_called()
+
+
 class TestGetQuizProviders(unittest.TestCase):
     def test_parses_comma_separated_providers(self):
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google, anthropic"):
@@ -555,6 +574,12 @@ class TestGenerateQuizContent(unittest.TestCase):
 
 class TestGenerateValidQuiz(unittest.TestCase):
     """Copre il loop di retry senza chiamare call_claude (stub diretto di generate_quiz_content)."""
+
+    def setUp(self):
+        for name in ("GOOGLE_API_KEY", "ANTHROPIC_API_KEY"):
+            patcher = patch.object(quiz_bot, name, "key")
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def _valid_quiz(self):
         return {
