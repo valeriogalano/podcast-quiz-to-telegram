@@ -23,6 +23,10 @@ jobs:
 
       - name: Run quiz bot
         env:
+          # stdout is block-buffered when not a terminal: without this its lines
+          # reach the log only at the end, out of order with stderr, and are lost
+          # if the job is cancelled
+          PYTHONUNBUFFERED: "1"
           FEED_RSS_URL: ${{ vars.FEED_RSS_URL }}
           GH_REPO: ${{ vars.GH_REPO }}
           GH_SCRIPTS_PATH: ${{ vars.GH_SCRIPTS_PATH }}
