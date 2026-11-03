@@ -436,6 +436,27 @@ class TestCallAi(unittest.TestCase):
             quiz_bot.call_ai("system", "user", provider="unknown")
 
 
+class TestEmptyVariables(unittest.TestCase):
+    def test_empty_or_blank_extensions_fall_back_to_md(self):
+        for raw in (None, "", " , ", ","):
+            with self.subTest(raw=raw):
+                self.assertEqual((".md",), quiz_bot._script_extensions(raw))
+
+    def test_extensions_are_parsed_without_empty_items(self):
+        self.assertEqual((".yml", ".md"), quiz_bot._script_extensions(".yml, ,.md,"))
+
+    def test_empty_variables_take_the_defaults_at_import(self):
+        import importlib
+        env = {"FEED_RSS_URL": "", "GH_REPO": "", "SCRIPT_EXTENSION": "", "QUIZ_PROVIDER": ""}
+        with patch.dict(os.environ, env):
+            module = importlib.reload(quiz_bot)
+            self.assertEqual("", module.FEED_RSS_URL)
+            self.assertEqual((".md",), module.SCRIPT_EXTENSIONS)
+            self.assertEqual("google", module.QUIZ_PROVIDER)
+        # di nuovo con l'ambiente degli altri test
+        importlib.reload(quiz_bot)
+
+
 class TestGetQuizProviders(unittest.TestCase):
     def test_parses_comma_separated_providers(self):
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google, anthropic"):
