@@ -422,10 +422,14 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.dry_run is not None:
+        # Lo stesso percorso della produzione (validazione, tentativi, fallback fra
+        # provider), fermato prima dell'invio: un dry-run che salta la validazione
+        # mostra quiz che in produzione non uscirebbero mai.
         print("Scarico il feed RSS...")
         for i in range(1, args.dry_run + 1):
-            quiz, episode_ref = generate_quiz_content()
-            print_quiz(quiz, episode_ref, index=i if args.dry_run > 1 else None)
+            if args.dry_run > 1:
+                print(f"\n=== Quiz {i}/{args.dry_run} ===")
+            generate_valid_quiz()
         return
 
     print("Scarico il feed RSS...")
