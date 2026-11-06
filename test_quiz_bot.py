@@ -811,9 +811,10 @@ class TestGenerateValidQuiz(unittest.TestCase):
             quiz_bot.generate_valid_quiz()
         self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES)
 
+    @patch("quiz_bot.time.sleep")
     @patch("quiz_bot.print_quiz")
     @patch("quiz_bot.generate_quiz_content")
-    def test_retries_provider_errors_before_next_provider(self, mock_gen, _):
+    def test_retries_provider_errors_before_next_provider(self, mock_gen, _, mock_sleep):
         failures = [quiz_bot.QuizProviderError("503")] * quiz_bot._MAX_QUIZ_RETRIES
         mock_gen.side_effect = [*failures, (self._valid_quiz(), None)]
 
@@ -827,6 +828,18 @@ class TestGenerateValidQuiz(unittest.TestCase):
             [call.args[0] for call in mock_gen.call_args_list],
             ["google"] * quiz_bot._MAX_QUIZ_RETRIES + ["anthropic"],
         )
+        # una pausa crescente fra un tentativo e l'altro, nessuna dopo l'ultimo
+        self.assertEqual([5, 15, 45, 60], [c.args[0] for c in mock_sleep.call_args_list])
+
+    @patch("quiz_bot.time.sleep")
+    @patch("quiz_bot.print_quiz")
+    @patch("quiz_bot.generate_quiz_content")
+    def test_an_invalid_quiz_is_regenerated_without_waiting(self, mock_gen, _, mock_sleep):
+        invalid = {"question": "Q" * 400, "options": ["A", "B"], "correct_option_ids": [0]}
+        mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), None)]
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
+            quiz_bot.generate_valid_quiz()
+        mock_sleep.assert_not_called()
 
 
 class TestMalformedQuizIsRetried(unittest.TestCase):

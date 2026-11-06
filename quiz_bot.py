@@ -524,6 +524,14 @@ def validate_quiz(quiz: dict) -> list[str]:
 
 
 _MAX_QUIZ_RETRIES = 5
+# Pausa dopo un errore del provider: un 503 "high demand" ritentato dopo un
+# secondo fallisce di nuovo. 5s, 15s, 45s, poi al massimo 60s.
+_RETRY_BASE_DELAY = 5
+_RETRY_MAX_DELAY = 60
+
+
+def _retry_delay(attempt: int) -> int:
+    return min(_RETRY_BASE_DELAY * 3 ** (attempt - 1), _RETRY_MAX_DELAY)
 
 # Codice d'uscita quando non si sa se il poll è uscito: diverso da 1 (fallito
 # di sicuro), perché rilanciare il run potrebbe pubblicare un secondo quiz.
@@ -545,7 +553,9 @@ def generate_valid_quiz() -> tuple[dict, dict | None]:
                     file=sys.stderr,
                 )
                 if attempt < _MAX_QUIZ_RETRIES:
-                    print("Riprovo con lo stesso provider...")
+                    delay = _retry_delay(attempt)
+                    print(f"Riprovo con lo stesso provider tra {delay}s...")
+                    time.sleep(delay)
                 continue
 
             # prima la validazione: print_quiz presuppone un quiz ben formato, e
