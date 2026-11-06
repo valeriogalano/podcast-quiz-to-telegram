@@ -1,5 +1,9 @@
-anthropic
-google-genai
-feedparser
-requests
-python-dotenv
+# Exact versions: an unpinned major release of an SDK could change its API and
+# break the next scheduled run with no commit to trace it to. Dependabot
+# (.github/dependabot.yml) proposes the updates as pull requests, where the
+# tests run.
+anthropic==2.4.0
+google-genai==2.34.0
+feedparser==6.0.14
+requests==2.34.2
+python-dotenv==1.2.4
