@@ -455,8 +455,12 @@ def send_poll(quiz: dict, episode_ref: dict | None = None) -> dict:
     return resp.json()
 
 
-def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | None]:
-    """Genera il quiz e ritorna (quiz, episode_ref).
+def prepare_quiz_request() -> tuple[str, str, dict | None]:
+    """Sceglie il tipo di quiz e prepara il prompt: (system, user, episode_ref).
+
+    Si fa una volta sola per run. I tentativi ripetono solo la chiamata al
+    modello: rifare la scelta a ogni tentativo trasformava un quiz da episodio
+    fallito per un 503 in un quiz generico, e riscaricava feed e script.
 
     Per i quiz basati su un episodio, `episode_ref` è un dict con `title` e
     `link` (la pagina dell'episodio sul sito, se presente nel feed RSS), usato
@@ -481,14 +485,20 @@ def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | Non
                     f"TRASCRIZIONE:\n{transcript[:4000]}" if transcript else "",
                     f"SCRIPT:\n{script[:2000]}" if script else "",
                 ]))
-                print("Genero il quiz basato sull'episodio...")
                 episode_ref = {"title": title, "link": episode.get("link")}
-                return call_ai(_EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}", provider), episode_ref
+                return _EPISODE_SYSTEM, f"Titolo: {title}\n\n{content}", episode_ref
             print("Nessun contenuto episodio disponibile, passo al quiz generico...")
 
     topic = random.choice(_GENERIC_TOPICS)
-    print(f"Genero un quiz generico (tema: {topic})...")
-    return call_ai(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}", provider), None
+    print(f"Quiz generico (tema: {topic})")
+    return _GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}", None
+
+
+def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | None]:
+    """Prepara e genera un quiz in un colpo solo: (quiz, episode_ref)."""
+    system, user, episode_ref = prepare_quiz_request()
+    print("Genero il quiz...")
+    return call_ai(system, user, provider), episode_ref
 
 
 def _structure_errors(quiz: dict) -> list[str]:
@@ -587,12 +597,14 @@ def generate_valid_quiz() -> tuple[dict, dict | None]:
             file=sys.stderr,
         )
         sys.exit(1)
+    system, user, episode_ref = prepare_quiz_request()
     for provider_index, provider in enumerate(providers, start=1):
         if len(providers) > 1:
             print(f"Uso provider AI {provider_index}/{len(providers)}: {provider}")
         for attempt in range(1, _MAX_QUIZ_RETRIES + 1):
             try:
-                quiz, episode_ref = generate_quiz_content(provider)
+                print("Genero il quiz...")
+                quiz = call_ai(system, user, provider)
             except Exception as e:
                 print(
                     f"Errore provider {provider} (tentativo {attempt}/{_MAX_QUIZ_RETRIES}): {e}",

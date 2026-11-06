@@ -679,12 +679,14 @@ class TestUsableProviders(unittest.TestCase):
         with patch.object(quiz_bot, "GOOGLE_API_KEY", "g"):
             self.assertEqual(["google", "openai"], quiz_bot.usable_providers(["google", "openai"]))
 
-    @patch("quiz_bot.generate_quiz_content")
-    def test_no_usable_provider_exits_without_calling_any(self, mock_gen):
+    @patch("quiz_bot.call_ai")
+    @patch("quiz_bot.prepare_quiz_request")
+    def test_no_usable_provider_exits_without_calling_any(self, mock_prepare, mock_gen):
         with patch.object(quiz_bot, "GOOGLE_API_KEY", ""), patch.object(quiz_bot, "ANTHROPIC_API_KEY", ""), \
                 patch.object(quiz_bot, "QUIZ_PROVIDER", "google,anthropic"), patch("builtins.print"), \
                 self.assertRaises(SystemExit):
             quiz_bot.generate_valid_quiz()
+        mock_prepare.assert_not_called()
         mock_gen.assert_not_called()
 
 
@@ -806,13 +808,17 @@ class TestGenerateQuizContent(unittest.TestCase):
 
 
 class TestGenerateValidQuiz(unittest.TestCase):
-    """Copre il loop di retry senza chiamare call_claude (stub diretto di generate_quiz_content)."""
+    """Copre il loop di retry senza chiamare i provider: il prompt viene da uno stub di
+    prepare_quiz_request, le risposte del modello da uno stub di call_ai."""
 
     def setUp(self):
         for name in ("GOOGLE_API_KEY", "ANTHROPIC_API_KEY"):
             patcher = patch.object(quiz_bot, name, "key")
             patcher.start()
             self.addCleanup(patcher.stop)
+        patcher = patch.object(quiz_bot, "prepare_quiz_request", return_value=("S", "U", None))
+        self.mock_prepare = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _valid_quiz(self):
         return {
@@ -823,18 +829,18 @@ class TestGenerateValidQuiz(unittest.TestCase):
         }
 
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
+    @patch("quiz_bot.call_ai")
     def test_returns_on_first_valid_attempt(self, mock_gen, _):
-        mock_gen.return_value = (self._valid_quiz(), None)
+        mock_gen.return_value = self._valid_quiz()
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
             quiz, episode_ref = quiz_bot.generate_valid_quiz()
         self.assertEqual(quiz["question"], "Q?")
         self.assertIsNone(episode_ref)
         self.assertEqual(mock_gen.call_count, 1)
-        mock_gen.assert_called_once_with("google")
+        mock_gen.assert_called_once_with("S", "U", "google")
 
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
+    @patch("quiz_bot.call_ai")
     def test_retries_until_valid(self, mock_gen, _):
         invalid = {
             "question": "Q" * 400,  # oltre limite 300
@@ -842,32 +848,36 @@ class TestGenerateValidQuiz(unittest.TestCase):
             "correct_option_ids": [0],
         }
         ep_ref = {"title": "Ep 1", "link": "https://example.com/ep"}
-        mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), ep_ref)]
+        self.mock_prepare.return_value = ("S", "U", ep_ref)
+        mock_gen.side_effect = [invalid, self._valid_quiz()]
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
             quiz, episode_ref = quiz_bot.generate_valid_quiz()
         self.assertEqual(quiz["question"], "Q?")
         self.assertEqual(episode_ref, ep_ref)
         self.assertEqual(mock_gen.call_count, 2)
+        # stesso prompt a ogni tentativo: tipo, episodio e download si scelgono una volta
+        self.mock_prepare.assert_called_once_with()
+        self.assertEqual({("S", "U")}, {c.args[:2] for c in mock_gen.call_args_list})
 
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
+    @patch("quiz_bot.call_ai")
     def test_exits_after_max_retries(self, mock_gen, _):
         invalid = {
             "question": "Q" * 400,
             "options": ["A", "B"],
             "correct_option_ids": [0],
         }
-        mock_gen.return_value = (invalid, None)
+        mock_gen.return_value = invalid
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), self.assertRaises(SystemExit):
             quiz_bot.generate_valid_quiz()
         self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES)
 
     @patch("quiz_bot.time.sleep")
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
+    @patch("quiz_bot.call_ai")
     def test_retries_provider_errors_before_next_provider(self, mock_gen, _, mock_sleep):
         failures = [quiz_bot.QuizProviderError("503")] * quiz_bot._MAX_QUIZ_RETRIES
-        mock_gen.side_effect = [*failures, (self._valid_quiz(), None)]
+        mock_gen.side_effect = [*failures, self._valid_quiz()]
 
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google,anthropic"):
             quiz, episode_ref = quiz_bot.generate_valid_quiz()
@@ -876,31 +886,34 @@ class TestGenerateValidQuiz(unittest.TestCase):
         self.assertIsNone(episode_ref)
         self.assertEqual(mock_gen.call_count, quiz_bot._MAX_QUIZ_RETRIES + 1)
         self.assertEqual(
-            [call.args[0] for call in mock_gen.call_args_list],
+            [call.args[2] for call in mock_gen.call_args_list],
             ["google"] * quiz_bot._MAX_QUIZ_RETRIES + ["anthropic"],
         )
+        # cambiare provider non rifà la preparazione: il quiz resta quello scelto
+        self.mock_prepare.assert_called_once_with()
         # una pausa crescente fra un tentativo e l'altro, nessuna dopo l'ultimo
         self.assertEqual([5, 15, 45, 60], [c.args[0] for c in mock_sleep.call_args_list])
 
     @patch("quiz_bot.time.sleep")
     @patch("quiz_bot.print_quiz")
-    @patch("quiz_bot.generate_quiz_content")
+    @patch("quiz_bot.call_ai")
     def test_an_invalid_quiz_is_regenerated_without_waiting(self, mock_gen, _, mock_sleep):
         invalid = {"question": "Q" * 400, "options": ["A", "B"], "correct_option_ids": [0]}
-        mock_gen.side_effect = [(invalid, None), (self._valid_quiz(), None)]
+        mock_gen.side_effect = [invalid, self._valid_quiz()]
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"):
             quiz_bot.generate_valid_quiz()
         mock_sleep.assert_not_called()
 
 
 class TestMalformedQuizIsRetried(unittest.TestCase):
-    @patch("quiz_bot.generate_quiz_content")
-    def test_a_malformed_quiz_is_regenerated_not_a_crash(self, mock_gen):
+    @patch("quiz_bot.prepare_quiz_request", return_value=("S", "U", None))
+    @patch("quiz_bot.call_ai")
+    def test_a_malformed_quiz_is_regenerated_not_a_crash(self, mock_gen, _):
         valid = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0], "explanation": "E"}
         mock_gen.side_effect = [
-            ({"question": "Q?", "options": ["A", "B"], "correct_option_ids": 0}, None),
-            ({"question": "Q?", "correct_option_ids": [0]}, None),
-            (valid, None),
+            {"question": "Q?", "options": ["A", "B"], "correct_option_ids": 0},
+            {"question": "Q?", "correct_option_ids": [0]},
+            valid,
         ]
         with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), patch.object(quiz_bot, "GOOGLE_API_KEY", "key"), \
                 patch("builtins.print"):
