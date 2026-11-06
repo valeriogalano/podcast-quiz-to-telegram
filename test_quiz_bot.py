@@ -36,6 +36,16 @@ class TestExtractTranscript(unittest.TestCase):
         self.assertEqual(quiz_bot.extract_transcript(episode), "")
 
 
+class TestExtractTranscriptHtml(unittest.TestCase):
+    def test_html_is_reduced_to_text_before_truncation(self):
+        episode = {"summary": '<p>Parliamo di <strong>DNS</strong> &amp; CDN.</p>'
+                              '<ul><li><a href="https://x.it">Fonte</a></li></ul>'}
+        self.assertEqual("Parliamo di DNS & CDN.\nFonte", quiz_bot.extract_transcript(episode))
+
+    def test_plain_text_is_left_alone(self):
+        self.assertEqual("testo < semplice", quiz_bot.html_to_text("testo &lt; semplice"))
+
+
 class TestFetchRandomEpisode(unittest.TestCase):
     @patch("quiz_bot.feedparser")
     def test_returns_random_episode(self, mock_feedparser):
@@ -44,7 +54,7 @@ class TestFetchRandomEpisode(unittest.TestCase):
         self.assertIn(episode["title"], ["Ep 1", "Ep 2"])
 
     @patch("quiz_bot.feedparser")
-    def test_exits_on_empty_feed(self, mock_feedparser):
+    def test_raises_on_empty_feed(self, mock_feedparser):
         mock_feedparser.parse.return_value.entries = []
         with self.assertRaises(RuntimeError):
             quiz_bot.fetch_random_episode()
@@ -55,7 +65,7 @@ class TestFetchGithubScript(unittest.TestCase):
     def test_returns_best_matching_script(self, mock_get):
         files_resp = MagicMock()
         files_resp.json.return_value = [
-            {"name": "episodio-bluetooth.yml", "download_url": "http://example.com/bt.yml"},
+            {"name": "episodio-origine-bluetooth.yml", "download_url": "http://example.com/bt.yml"},
             {"name": "altro-episodio.yml", "download_url": "http://example.com/altro.yml"},
         ]
         content_resp = MagicMock()
@@ -85,6 +95,34 @@ class TestFetchGithubScript(unittest.TestCase):
     def test_returns_empty_on_network_error(self, _):
         result = quiz_bot.fetch_github_script("qualsiasi titolo")
         self.assertEqual(result, "")
+
+
+class TestPickScript(unittest.TestCase):
+    FILES = [
+        {"name": "PIC150.yml"}, {"name": "PIC151.yml"}, {"name": "README.md"},
+        {"name": "il-futuro-del-web.yml"}, {"name": "intelligenza-artificiale-e-lavoro.yml"},
+    ]
+
+    def pick(self, title, link=""):
+        with patch.object(quiz_bot, "SCRIPT_EXTENSIONS", (".yml",)):
+            item = quiz_bot._pick_script(self.FILES, title, link)
+        return item and item["name"]
+
+    def test_the_episode_number_in_the_link_wins(self):
+        link = "https://pensieriincodice.it/episodes/151-il-second-brain"
+        self.assertEqual("PIC151.yml", self.pick("Il second brain", link))
+
+    def test_one_shared_word_is_not_a_match(self):
+        self.assertIsNone(self.pick("Il futuro della privacy"))
+
+    def test_most_title_words_are_a_match(self):
+        self.assertEqual("intelligenza-artificiale-e-lavoro.yml",
+                         self.pick("Intelligenza artificiale e lavoro"))
+
+    def test_a_tie_is_not_a_match(self):
+        files = [{"name": "rust-memoria.yml"}, {"name": "rust-sicurezza.yml"}]
+        with patch.object(quiz_bot, "SCRIPT_EXTENSIONS", (".yml",)):
+            self.assertIsNone(quiz_bot._pick_script(files, "Rust"))
 
 
 class TestCallClaude(unittest.TestCase):
@@ -124,7 +162,7 @@ class TestCallClaude(unittest.TestCase):
         self.assertEqual(result["model"], "claude-sonnet-5-5")
 
     @patch("quiz_bot.anthropic.Anthropic")
-    def test_exits_on_invalid_json(self, mock_anthropic):
+    def test_raises_on_invalid_json(self, mock_anthropic):
         mock_anthropic.return_value.messages.create.return_value = self._make_message("non è json")
         with self.assertRaises(quiz_bot.QuizProviderError):
             quiz_bot.call_claude("system", "user")
@@ -259,8 +297,65 @@ class TestEpisodeButton(unittest.TestCase):
         result = quiz_bot.send_poll(self.QUIZ, {"title": "T", "link": "https://example.com/ep"})
         self.assertEqual(result["result"]["message_id"], 5)
         self.assertEqual(mock_post.call_count, 2)
-        self.assertNotIn("reply_markup", mock_post.call_args.kwargs["json"])
+        first, second = (c.kwargs["json"] for c in mock_post.call_args_list)
+        self.assertIn("reply_markup", first)
+        self.assertNotIn("reply_markup", second)
         rejected.raise_for_status.assert_not_called()
+
+
+class TestTelegramErrors(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0]}
+
+    @patch("quiz_bot.requests.post")
+    def test_the_error_names_status_and_reason_but_not_the_token(self, mock_post):
+        rejected = MagicMock(status_code=400, ok=False, text="")
+        rejected.json.return_value = {"ok": False, "description": "Bad Request: poll options are empty"}
+        rejected.raise_for_status.side_effect = AssertionError("its message carries the URL")
+        mock_post.return_value = rejected
+        with self.assertRaises(quiz_bot.TelegramError) as cm:
+            quiz_bot.send_poll(self.QUIZ)
+        message = str(cm.exception)
+        self.assertIn("400", message)
+        self.assertIn("poll options are empty", message)
+        self.assertNotIn(quiz_bot.TELEGRAM_BOT_TOKEN, message)
+        self.assertNotIn("api.telegram.org", message)
+
+    @patch("quiz_bot.requests.post")
+    def test_a_non_json_error_body_is_kept_short(self, mock_post):
+        rejected = MagicMock(status_code=502, ok=False, text="<html>" + "x" * 1000)
+        rejected.json.side_effect = ValueError("not json")
+        mock_post.return_value = rejected
+        with self.assertRaises(quiz_bot.TelegramError) as cm:
+            quiz_bot.send_poll(self.QUIZ)
+        self.assertLess(len(str(cm.exception)), 300)
+
+
+class TestFloodControl(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0]}
+
+    @patch("quiz_bot.time.sleep")
+    @patch("quiz_bot.requests.post")
+    def test_429_waits_and_resends_the_same_payload_with_the_button(self, mock_post, mock_sleep):
+        limited = MagicMock(status_code=429)
+        limited.json.return_value = {"ok": False, "parameters": {"retry_after": 7}}
+        ok = MagicMock(status_code=200)
+        ok.json.return_value = {"result": {"message_id": 9}}
+        mock_post.side_effect = [limited, ok]
+        result = quiz_bot.send_poll(self.QUIZ, {"title": "T", "link": "https://example.com/ep"})
+        self.assertEqual(9, result["result"]["message_id"])
+        mock_sleep.assert_called_once_with(7)
+        self.assertIn("reply_markup", mock_post.call_args.kwargs["json"])
+
+    @patch("quiz_bot.time.sleep")
+    @patch("quiz_bot.requests.post")
+    def test_the_wait_is_capped(self, mock_post, mock_sleep):
+        limited = MagicMock(status_code=429)
+        limited.json.return_value = {"parameters": {"retry_after": 3600}}
+        ok = MagicMock(status_code=200)
+        ok.json.return_value = {"result": {"message_id": 1}}
+        mock_post.side_effect = [limited, ok]
+        quiz_bot.send_poll(self.QUIZ)
+        mock_sleep.assert_called_once_with(quiz_bot._TELEGRAM_MAX_FLOOD_WAIT)
 
 
 class TestValidateQuiz(unittest.TestCase):
@@ -337,14 +432,83 @@ class TestValidateQuiz(unittest.TestCase):
         errors = quiz_bot.validate_quiz(quiz)
         self.assertTrue(any("explanation" in e for e in errors))
 
-    def test_empty_quiz_returns_no_errors(self):
-        """Nessun campo → nessun limite superato, lista vuota."""
-        self.assertEqual(quiz_bot.validate_quiz({}), [])
+    # Valori al limite esatto, già nella vecchia test_validate_quiz.py
+    def _quiz4(self, **overrides):
+        base = {"question": "Q?", "options": ["A", "B", "C", "D"], "correct_option_ids": [0],
+                "explanation": ""}
+        base.update(overrides)
+        return base
+
+    def test_limits_are_inclusive(self):
+        for field, value in (("question", "x" * 300), ("description", "d" * 200),
+                             ("options", ["x" * 100, "B", "C", "D"]), ("explanation", "x" * 200)):
+            with self.subTest(field=field):
+                self.assertEqual([], quiz_bot.validate_quiz(self._quiz4(**{field: value})))
+
+    def test_one_over_each_limit_is_flagged(self):
+        for field, value, label in (("description", "d" * 201, "description"),
+                                    ("options", ["x" * 101, "B", "C", "D"], "opzione 0"),
+                                    ("explanation", "x" * 201, "explanation")):
+            with self.subTest(field=field):
+                errors = quiz_bot.validate_quiz(self._quiz4(**{field: value}))
+                self.assertTrue(any(label in e for e in errors), errors)
+
+    def test_every_error_is_reported(self):
+        quiz = self._quiz4(question="x" * 301, options=["x" * 101, "B", "C", "D"], explanation="x" * 201)
+        self.assertGreaterEqual(len(quiz_bot.validate_quiz(quiz)), 3)
+
+    def test_empty_quiz_is_invalid(self):
+        """Un quiz senza campi non è pubblicabile: Telegram lo rifiuterebbe."""
+        self.assertNotEqual(quiz_bot.validate_quiz({}), [])
+
+
+class TestValidateQuizStructure(unittest.TestCase):
+    BASE = {
+        "question": "Domanda?",
+        "options": ["A", "B", "C"],
+        "correct_option_ids": [0],
+        "explanation": "Perché sì.",
+    }
+
+    def assertInvalid(self, **changes):
+        quiz = {**self.BASE, **changes}
+        quiz = {k: v for k, v in quiz.items() if v is not ...}
+        self.assertNotEqual(quiz_bot.validate_quiz(quiz), [], quiz)
+
+    def test_base_is_valid(self):
+        self.assertEqual(quiz_bot.validate_quiz(dict(self.BASE)), [])
+
+    def test_correct_ids(self):
+        for ids in ([7], [-1], [], 0, [0, 0], ["0"], [True], [0, 1, 2], None):
+            with self.subTest(ids=ids):
+                self.assertInvalid(correct_option_ids=ids)
+
+    def test_options(self):
+        for options in (["A", "A", "B"], ["A", " a ", "B"], ["A"], [str(i) for i in range(13)],
+                        "A,B,C", ["A", "", "B"], ["A", None, "B"], None):
+            with self.subTest(options=options):
+                self.assertInvalid(options=options)
+
+    def test_question(self):
+        for question in ("", "   ", None, 42):
+            with self.subTest(question=question):
+                self.assertInvalid(question=question)
+
+    def test_missing_fields(self):
+        for field in ("question", "options", "correct_option_ids"):
+            with self.subTest(field=field):
+                self.assertInvalid(**{field: ...})
+
+    def test_explanation(self):
+        self.assertInvalid(explanation=["no"])
+        self.assertInvalid(explanation="a\nb\nc\nd")
+        self.assertEqual(quiz_bot.validate_quiz({**self.BASE, "explanation": "a\nb\nc"}), [])
+
+    def test_multiple_correct_but_not_all(self):
+        self.assertEqual(quiz_bot.validate_quiz({**self.BASE, "correct_option_ids": [0, 2]}), [])
 
 
 class TestPrintQuiz(unittest.TestCase):
-    """Smoke test: verifica che print_quiz non sollevi eccezioni sui rami principali."""
-
     def _quiz(self, **overrides):
         base = {
             "question": "Domanda?",
@@ -355,23 +519,31 @@ class TestPrintQuiz(unittest.TestCase):
         base.update(overrides)
         return base
 
-    @patch("builtins.print")
-    def test_prints_generic_quiz(self, _):
-        quiz_bot.print_quiz(self._quiz(), episode_ref=None)
+    def _output(self, *args, **kwargs):
+        import io
+        from contextlib import redirect_stdout
+        out = io.StringIO()
+        with redirect_stdout(out):
+            quiz_bot.print_quiz(*args, **kwargs)
+        return out.getvalue()
 
-    @patch("builtins.print")
-    def test_prints_episode_quiz(self, _):
-        quiz_bot.print_quiz(
-            self._quiz(), episode_ref={"title": "Episodio 42", "link": None}
-        )
+    def test_prints_generic_quiz(self):
+        out = self._output(self._quiz(), episode_ref=None)
+        self.assertIn("generico", out)
+        self.assertIn("Q: Domanda?", out)
+        self.assertIn("[✓] B", out)
+        self.assertIn("[ ] A", out)
+        self.assertIn("💡 Spiegazione", out)
 
-    @patch("builtins.print")
-    def test_prints_with_description(self, _):
-        quiz_bot.print_quiz(self._quiz(description="print(1+1)"), episode_ref=None)
+    def test_prints_episode_quiz(self):
+        out = self._output(self._quiz(), episode_ref={"title": "Episodio 42", "link": None})
+        self.assertIn("episodio (Episodio 42)", out)
 
-    @patch("builtins.print")
-    def test_prints_with_index(self, _):
-        quiz_bot.print_quiz(self._quiz(), episode_ref=None, index=3)
+    def test_prints_with_description(self):
+        self.assertIn("print(1+1)", self._output(self._quiz(description="print(1+1)"), episode_ref=None))
+
+    def test_prints_with_index(self):
+        self.assertIn("[3] generico", self._output(self._quiz(), episode_ref=None, index=3))
 
 
 class TestCallGemini(unittest.TestCase):
@@ -400,10 +572,24 @@ class TestCallGemini(unittest.TestCase):
         self.assertEqual(result["model"], "gemini-3.8-flash")
 
     @patch("quiz_bot.genai.Client")
-    def test_exits_on_invalid_json(self, mock_client):
+    def test_raises_on_invalid_json(self, mock_client):
         mock_client.return_value.models.generate_content.return_value = self._make_response("non è json")
         with self.assertRaises(quiz_bot.QuizProviderError):
             quiz_bot.call_gemini("system", "user")
+
+
+class TestParseQuizJson(unittest.TestCase):
+    def test_fenced_json_is_parsed_and_tagged_with_the_model(self):
+        quiz = quiz_bot._parse_quiz_json('```json\n{"question": "Q"}\n```', "m-1", "X")
+        self.assertEqual({"question": "Q", "model": "m-1"}, quiz)
+
+    def test_a_json_that_is_not_an_object_is_a_provider_error(self):
+        with self.assertRaises(quiz_bot.QuizProviderError):
+            quiz_bot._parse_quiz_json('["a", "b"]', "m", "X")
+
+    def test_an_empty_answer_is_a_provider_error(self):
+        with self.assertRaises(quiz_bot.QuizProviderError):
+            quiz_bot._parse_quiz_json("", "m", "X")
 
 
 class TestCallAi(unittest.TestCase):
@@ -434,6 +620,27 @@ class TestCallAi(unittest.TestCase):
     def test_rejects_unknown_provider(self):
         with self.assertRaises(quiz_bot.QuizProviderError):
             quiz_bot.call_ai("system", "user", provider="unknown")
+
+
+class TestEmptyVariables(unittest.TestCase):
+    def test_empty_or_blank_extensions_fall_back_to_md(self):
+        for raw in (None, "", " , ", ","):
+            with self.subTest(raw=raw):
+                self.assertEqual((".md",), quiz_bot._script_extensions(raw))
+
+    def test_extensions_are_parsed_without_empty_items(self):
+        self.assertEqual((".yml", ".md"), quiz_bot._script_extensions(".yml, ,.md,"))
+
+    def test_empty_variables_take_the_defaults_at_import(self):
+        import importlib
+        env = {"FEED_RSS_URL": "", "GH_REPO": "", "SCRIPT_EXTENSION": "", "QUIZ_PROVIDER": ""}
+        with patch.dict(os.environ, env):
+            module = importlib.reload(quiz_bot)
+            self.assertEqual("", module.FEED_RSS_URL)
+            self.assertEqual((".md",), module.SCRIPT_EXTENSIONS)
+            self.assertEqual("google", module.QUIZ_PROVIDER)
+        # di nuovo con l'ambiente degli altri test
+        importlib.reload(quiz_bot)
 
 
 class TestGetQuizProviders(unittest.TestCase):
@@ -635,5 +842,58 @@ class TestGenerateValidQuiz(unittest.TestCase):
         mock_sleep.assert_not_called()
 
 
+class TestMalformedQuizIsRetried(unittest.TestCase):
+    @patch("quiz_bot.generate_quiz_content")
+    def test_a_malformed_quiz_is_regenerated_not_a_crash(self, mock_gen):
+        valid = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0], "explanation": "E"}
+        mock_gen.side_effect = [
+            ({"question": "Q?", "options": ["A", "B"], "correct_option_ids": 0}, None),
+            ({"question": "Q?", "correct_option_ids": [0]}, None),
+            (valid, None),
+        ]
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), patch("builtins.print"):
+            quiz, _ = quiz_bot.generate_valid_quiz()
+        self.assertEqual(valid, quiz)
+        self.assertEqual(3, mock_gen.call_count)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUncertainSend(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0], "explanation": "E"}
+
+    def run_main(self, send):
+        with patch.object(sys, "argv", ["quiz_bot.py"]), \
+                patch("quiz_bot.generate_valid_quiz", return_value=(dict(self.QUIZ), None)), \
+                patch("quiz_bot.send_poll", side_effect=send), patch("builtins.print"):
+            quiz_bot.main()
+
+    def test_a_read_timeout_exits_with_the_uncertain_code(self):
+        import requests
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(requests.exceptions.ReadTimeout("read timed out"))
+        self.assertEqual(quiz_bot.EXIT_UNCERTAIN, cm.exception.code)
+
+    def test_a_logging_error_after_sending_does_not_fail_the_run(self):
+        # correct_option_ids malformato solo nel log: il poll è già uscito
+        def send(quiz, ref):
+            quiz["correct_option_ids"] = []
+            return {"result": {"message_id": 1}}
+        self.run_main(send)
+
+
+class TestFinalLog(unittest.TestCase):
+    def test_every_correct_answer_is_logged(self):
+        import io
+        from contextlib import redirect_stdout
+        quiz = {"question": "Quali?", "options": ["A", "B", "C"], "correct_option_ids": [0, 2],
+                "explanation": "E"}
+        out = io.StringIO()
+        with patch.object(sys, "argv", ["quiz_bot.py"]), \
+                patch("quiz_bot.generate_valid_quiz", return_value=(quiz, None)), \
+                patch("quiz_bot.send_poll", return_value={"result": {"message_id": 1}}), \
+                redirect_stdout(out):
+            quiz_bot.main()
+        self.assertIn("A: A | C", out.getvalue())

@@ -22,15 +22,14 @@
 Ad ogni esecuzione lo script:
 
 1. Decide casualmente il tipo di quiz da generare:
-   - **75% delle volte**: quiz generico — sceglie un tema casuale tra oltre 30 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e chiama Claude Haiku per generarlo.
-   - **25% delle volte**: quiz da episodio — scarica il feed RSS, seleziona un episodio casuale, ne estrae la trascrizione e cerca il file script corrispondente nel repo GitHub. Se trova almeno uno dei due contenuti, li passa a Claude Haiku per generare il quiz. Se non trova nulla, ricade sul quiz generico.
+   - **75% delle volte**: quiz generico — sceglie un tema casuale tra 29 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e lo fa generare al provider AI configurato (Gemini per default, Claude come alternativa o fallback).
+   - **25% delle volte**: quiz da episodio — scarica il feed RSS, seleziona un episodio casuale, ne estrae la trascrizione e cerca il file script corrispondente nel repo GitHub. Se trova almeno uno dei due contenuti, li passa al provider AI per generare il quiz. Se non trova nulla, ricade sul quiz generico.
 2. Valida il quiz rispetto ai limiti dell'API Telegram (domanda ≤ 300 caratteri, descrizione ≤ 200 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **5 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
 3. Stampa il contenuto del quiz nei log (utile per il debug) e pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con:
    - eventuale snippet/contesto nel campo `description` nativo (Bot API 9.0)
    - footer di trasparenza che indica il modello AI usato per generarlo (es. `Generato con claude-sonnet-5-5`)
    - supporto per **più risposte corrette** quando appropriato (con `allows_multiple_answers`)
-   - risultati nascosti fino alla chiusura del poll (`hide_results_until_closes`), per non spoilerare i voti ai late voters
-   - spiegazione visibile dopo aver risposto e apertura di 24 ore
+   - spiegazione visibile subito dopo aver risposto (per questo `hide_results_until_closes` non viene impostato: con quel flag Telegram mostrerebbe la spiegazione solo alla chiusura) e apertura di 24 ore
 
 ---
 
@@ -38,7 +37,7 @@ Ad ogni esecuzione lo script:
 
 - Python 3.11+
 - Un bot Telegram (creabile tramite [@BotFather](https://t.me/botfather))
-- Una chiave API Anthropic
+- Una chiave API di Google (Gemini, provider di default) e/o di Anthropic (Claude)
 
 ---
 
@@ -46,16 +45,16 @@ Ad ogni esecuzione lo script:
 
 ### 1. Variabili d'ambiente / `.env`
 
-Copia `.env.example` in `.env` e compila i valori. In GitHub Actions le stesse variabili vanno aggiunte come **Secrets** in **Settings → Secrets and variables → Actions**.
+Copia `.env.example` in `.env` e compila i valori. In GitHub Actions vanno in **Settings → Secrets and variables → Actions**: le chiavi (`TELEGRAM_BOT_TOKEN`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) come **Secrets**, tutte le altre come **Variables** (il workflow le legge da `vars`: una variabile messa fra i Secrets arriva vuota).
 
 | Variabile | Obbligatoria | Descrizione |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | ✓ | Token del bot Telegram |
 | `TELEGRAM_CHAT_ID` | ✓ | Chat ID o username del canale/gruppo dove pubblicare il quiz |
-| `FEED_RSS_URL` | ✓ | URL del feed RSS del podcast |
-| `GH_REPO` | ✓ | Repo GitHub degli script (es. `utente/repo`) |
-| `GH_SCRIPTS_PATH` | ✓ | Cartella degli script nel repo (es. `scripts/`) |
-| `SCRIPT_EXTENSION` | ✓ | Estensioni dei file script separate da virgola (es. `.json,.yml`) |
+| `FEED_RSS_URL` |  | URL del feed RSS del podcast; senza, solo quiz generici |
+| `GH_REPO` |  | Repo GitHub degli script (es. `utente/repo`) |
+| `GH_SCRIPTS_PATH` |  | Cartella degli script nel repo (es. `scripts/`) |
+| `SCRIPT_EXTENSION` |  | Estensioni dei file script separate da virgola (es. `.json,.yml`, default `.md`) |
 | `GOOGLE_API_KEY` | se usi Gemini | Chiave API di Google (da [AI Studio](https://aistudio.google.com/)) |
 | `ANTHROPIC_API_KEY` | se usi Claude | Chiave API di Anthropic |
 | `QUIZ_PROVIDER` |  | Provider AI da usare, anche in fallback esplicito separato da virgola: `google` (default), `anthropic`, oppure `google,anthropic` |
