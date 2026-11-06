@@ -177,7 +177,51 @@ def extract_transcript(episode: dict) -> str:
     return html_to_text(episode.get("summary") or episode.get("itunes_transcript") or "")
 
 
-def fetch_github_script(title: str) -> str:
+# Parole che compaiono nei titoli di episodi diversi e non dicono nulla sul tema.
+_STOPWORDS = {
+    "della", "delle", "dello", "degli", "nella", "nelle", "nello", "negli", "dalla",
+    "dalle", "alla", "alle", "sulla", "sulle", "come", "cosa", "sono", "anche", "quando",
+    "perché", "perche", "questo", "questa", "quello", "quella", "episodio", "puntata",
+}
+
+
+def _episode_number(link: str) -> int | None:
+    """Il sito pubblica gli episodi su /episodes/NNN-slug: NNN identifica lo script."""
+    match = re.search(r"/episodes?/(\d+)", link or "")
+    return int(match.group(1)) if match else None
+
+
+def _pick_script(files: list[dict], title: str, link: str = "") -> dict | None:
+    """Sceglie lo script dell'episodio, o nessuno.
+
+    Prima per numero (gli script si chiamano PICNNN.yml); altrimenti per parole
+    del titolo, ma solo se ne coincide più della metà e senza pareggi: con una
+    parola in comune ("futuro") si sceglieva lo script di un altro episodio.
+    """
+    candidates = [f for f in files if f.get("name", "").endswith(SCRIPT_EXTENSIONS)]
+
+    number = _episode_number(link)
+    if number is not None:
+        for item in candidates:
+            digits = re.findall(r"\d+", item["name"])
+            if digits and int(digits[0]) == number:
+                return item
+
+    keywords = [kw for kw in set(re.findall(r"\b\w{4,}\b", title.lower())) if kw not in _STOPWORDS]
+    if not keywords:
+        return None
+    scored = sorted(
+        ((sum(1 for kw in keywords if kw in item["name"].lower()), item) for item in candidates),
+        key=lambda pair: pair[0], reverse=True,
+    )
+    if not scored or scored[0][0] * 2 <= len(keywords):
+        return None
+    if len(scored) > 1 and scored[1][0] == scored[0][0]:
+        return None
+    return scored[0][1]
+
+
+def fetch_github_script(title: str, link: str = "") -> str:
     try:
         resp = requests.get(
             f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_SCRIPTS_PATH}",
@@ -189,15 +233,7 @@ def fetch_github_script(title: str) -> str:
         print(f"Avviso: impossibile accedere al repo GitHub ({e}).", file=sys.stderr)
         return ""
 
-    keywords = re.findall(r"\b\w{4,}\b", title.lower())
-    best_match, best_score = None, 0
-    for item in files:
-        if not item.get("name", "").endswith(SCRIPT_EXTENSIONS):
-            continue
-        score = sum(1 for kw in keywords if kw in item["name"].lower())
-        if score > best_score:
-            best_score, best_match = score, item
-
+    best_match = _pick_script(files, title, link)
     if not best_match:
         return ""
 
@@ -349,7 +385,7 @@ def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | Non
             print("Estraggo la trascrizione...")
             transcript = extract_transcript(episode)
             print("Cerco lo script nel repo GitHub...")
-            script = fetch_github_script(title)
+            script = fetch_github_script(title, episode.get("link") or "")
             if transcript or script:
                 content = "\n\n".join(filter(None, [
                     f"TRASCRIZIONE:\n{transcript[:4000]}" if transcript else "",
