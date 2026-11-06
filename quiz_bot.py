@@ -20,16 +20,24 @@ import feedparser
 import requests
 
 # ── Configurazione ────────────────────────────────────────────────────────────
-FEED_RSS_URL = os.environ.get("FEED_RSS_URL", "")
-GITHUB_REPO = os.environ.get("GH_REPO", "")
-GITHUB_SCRIPTS_PATH = os.environ.get("GH_SCRIPTS_PATH", "")
-SCRIPT_EXTENSIONS = tuple(
-    ext.strip() for ext in os.environ.get("SCRIPT_EXTENSION", ".md").split(",")
-)
+# Su Actions una `vars.X` non definita arriva come stringa vuota, non come
+# variabile assente: `or` fa valere il default anche in quel caso.
+FEED_RSS_URL = os.environ.get("FEED_RSS_URL") or ""
+GITHUB_REPO = os.environ.get("GH_REPO") or ""
+GITHUB_SCRIPTS_PATH = os.environ.get("GH_SCRIPTS_PATH") or ""
+
+
+def _script_extensions(raw: str | None) -> tuple[str, ...]:
+    # un'estensione vuota renderebbe compatibile qualunque file ("x".endswith(""))
+    extensions = tuple(ext.strip() for ext in (raw or "").split(",") if ext.strip())
+    return extensions or (".md",)
+
+
+SCRIPT_EXTENSIONS = _script_extensions(os.environ.get("SCRIPT_EXTENSION"))
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-QUIZ_PROVIDER = os.environ.get("QUIZ_PROVIDER", "google").lower()
+QUIZ_PROVIDER = (os.environ.get("QUIZ_PROVIDER") or "google").lower()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
@@ -556,6 +564,9 @@ def main() -> None:
     parser.add_argument("--dry-run", metavar="N", type=int, nargs="?", const=1,
                         help="Genera N quiz (default 1) senza inviarli su Telegram")
     args = parser.parse_args()
+
+    if not FEED_RSS_URL:
+        print("Avviso: FEED_RSS_URL non impostata, solo quiz generici.", file=sys.stderr)
 
     if args.dry_run is not None:
         print("Scarico il feed RSS...")
