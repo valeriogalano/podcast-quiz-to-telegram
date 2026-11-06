@@ -60,6 +60,27 @@ class QuizProviderError(RuntimeError):
     """Errore recuperabile durante la generazione del quiz via provider AI."""
 
 
+class TelegramError(RuntimeError):
+    """Telegram ha rifiutato la richiesta. Il messaggio riporta stato e motivo,
+    mai l'URL: contiene il token del bot, che finirebbe in chiaro nei log."""
+
+    def __init__(self, status_code: int, description: str):
+        super().__init__(f"Telegram ha rifiutato sendPoll: HTTP {status_code} — {description}")
+        self.status_code = status_code
+        self.description = description
+
+
+def _raise_for_telegram(resp) -> None:
+    """Al posto di resp.raise_for_status(), il cui messaggio contiene l'URL."""
+    if resp.ok:
+        return
+    try:
+        description = resp.json().get("description", "")
+    except ValueError:
+        description = (resp.text or "")[:200]
+    raise TelegramError(resp.status_code, description)
+
+
 _JSON_SCHEMA = """\
 Rispondi SOLO con un JSON valido, senza backtick, senza testo aggiuntivo:
 {
@@ -361,7 +382,7 @@ def send_poll(quiz: dict, episode_ref: dict | None = None) -> dict:
         print(f"Avviso: poll rifiutato col pulsante ({resp.text}), riprovo senza.", file=sys.stderr)
         del payload["reply_markup"]
         resp = requests.post(f"{TELEGRAM_API}/sendPoll", json=payload, timeout=10)
-    resp.raise_for_status()
+    _raise_for_telegram(resp)
     return resp.json()
 
 

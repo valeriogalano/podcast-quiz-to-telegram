@@ -301,6 +301,33 @@ class TestEpisodeButton(unittest.TestCase):
         rejected.raise_for_status.assert_not_called()
 
 
+class TestTelegramErrors(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0]}
+
+    @patch("quiz_bot.requests.post")
+    def test_the_error_names_status_and_reason_but_not_the_token(self, mock_post):
+        rejected = MagicMock(status_code=400, ok=False, text="")
+        rejected.json.return_value = {"ok": False, "description": "Bad Request: poll options are empty"}
+        rejected.raise_for_status.side_effect = AssertionError("its message carries the URL")
+        mock_post.return_value = rejected
+        with self.assertRaises(quiz_bot.TelegramError) as cm:
+            quiz_bot.send_poll(self.QUIZ)
+        message = str(cm.exception)
+        self.assertIn("400", message)
+        self.assertIn("poll options are empty", message)
+        self.assertNotIn(quiz_bot.TELEGRAM_BOT_TOKEN, message)
+        self.assertNotIn("api.telegram.org", message)
+
+    @patch("quiz_bot.requests.post")
+    def test_a_non_json_error_body_is_kept_short(self, mock_post):
+        rejected = MagicMock(status_code=502, ok=False, text="<html>" + "x" * 1000)
+        rejected.json.side_effect = ValueError("not json")
+        mock_post.return_value = rejected
+        with self.assertRaises(quiz_bot.TelegramError) as cm:
+            quiz_bot.send_poll(self.QUIZ)
+        self.assertLess(len(str(cm.exception)), 300)
+
+
 class TestValidateQuiz(unittest.TestCase):
     def test_valid_quiz_returns_no_errors(self):
         quiz = {
