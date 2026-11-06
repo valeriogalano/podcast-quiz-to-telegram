@@ -922,6 +922,20 @@ class TestMalformedQuizIsRetried(unittest.TestCase):
         self.assertEqual(3, mock_gen.call_count)
 
 
+class TestDryRun(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0], "explanation": "E"}
+
+    def test_dry_run_goes_through_validation_and_never_sends(self):
+        with patch.object(sys, "argv", ["quiz_bot.py", "--dry-run", "2"]), \
+                patch("quiz_bot.generate_valid_quiz", return_value=(self.QUIZ, None)) as valid, \
+                patch("quiz_bot.generate_quiz_content") as raw, \
+                patch("quiz_bot.send_poll") as send, patch("builtins.print"):
+            quiz_bot.main()
+        self.assertEqual(2, valid.call_count)
+        raw.assert_not_called()
+        send.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 
