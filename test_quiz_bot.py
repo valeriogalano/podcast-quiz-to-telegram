@@ -517,6 +517,20 @@ class TestCallGemini(unittest.TestCase):
             quiz_bot.call_gemini("system", "user")
 
 
+class TestParseQuizJson(unittest.TestCase):
+    def test_fenced_json_is_parsed_and_tagged_with_the_model(self):
+        quiz = quiz_bot._parse_quiz_json('```json\n{"question": "Q"}\n```', "m-1", "X")
+        self.assertEqual({"question": "Q", "model": "m-1"}, quiz)
+
+    def test_a_json_that_is_not_an_object_is_a_provider_error(self):
+        with self.assertRaises(quiz_bot.QuizProviderError):
+            quiz_bot._parse_quiz_json('["a", "b"]', "m", "X")
+
+    def test_an_empty_answer_is_a_provider_error(self):
+        with self.assertRaises(quiz_bot.QuizProviderError):
+            quiz_bot._parse_quiz_json("", "m", "X")
+
+
 class TestCallAi(unittest.TestCase):
     def _response(self):
         return {"question": "?", "options": ["a", "b"], "correct_option_ids": [0]}

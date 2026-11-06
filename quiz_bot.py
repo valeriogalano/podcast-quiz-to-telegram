@@ -275,6 +275,21 @@ def fetch_github_script(title: str, link: str = "") -> str:
         return ""
 
 
+def _parse_quiz_json(raw: str, model: str, provider_name: str) -> dict:
+    """Testo del modello -> quiz: toglie un eventuale blocco ``` e annota il modello."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise QuizProviderError(f"risposta di {provider_name} non è un JSON valido: {e}\n{raw}") from e
+    if not isinstance(result, dict):
+        raise QuizProviderError(f"risposta di {provider_name} non è un oggetto JSON: {raw}")
+    result["model"] = model
+    return result
+
+
 def call_claude(system: str, user: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
@@ -285,15 +300,8 @@ def call_claude(system: str, user: str) -> dict:
         messages=[{"role": "user", "content": user}],
     )
     # Il modello può mettere in testa un blocco di ragionamento: conta solo il testo.
-    raw = "".join(b.text for b in message.content if b.type == "text").strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise QuizProviderError(f"risposta di Claude non è un JSON valido: {e}\n{raw}") from e
-    result["model"] = _CLAUDE_MODEL
-    return result
+    raw = "".join(b.text for b in message.content if b.type == "text")
+    return _parse_quiz_json(raw, _CLAUDE_MODEL, "Claude")
 
 
 def get_quiz_providers() -> list[str]:
@@ -322,15 +330,7 @@ def call_gemini(system: str, user: str) -> dict:
         ),
         contents=user,
     )
-    raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise QuizProviderError(f"risposta di Gemini non è un JSON valido: {e}\n{raw}") from e
-    result["model"] = _GEMINI_MODEL
-    return result
+    return _parse_quiz_json(response.text or "", _GEMINI_MODEL, "Gemini")
 
 
 def build_poll_description(quiz: dict) -> str:
