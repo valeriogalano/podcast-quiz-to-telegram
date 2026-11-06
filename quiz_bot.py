@@ -46,6 +46,11 @@ _TELEGRAM_QUESTION_MAX = 300
 _TELEGRAM_DESCRIPTION_MAX = 200
 _TELEGRAM_OPTION_MAX = 100
 _TELEGRAM_EXPLANATION_MAX = 200
+_TELEGRAM_EXPLANATION_MAX_NEWLINES = 2
+# Il prompt chiede fra 2 e 6 opzioni: Telegram ne ammette di più, ma un quiz
+# fuori da questo range è un quiz che il modello non ha scritto come richiesto.
+_MIN_OPTIONS = 2
+_MAX_OPTIONS = 6
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -330,9 +335,51 @@ def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | Non
     return call_ai(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}", provider), None
 
 
-def validate_quiz(quiz: dict) -> list[str]:
-    """Controlla i limiti Telegram. Ritorna lista di errori, vuota se valido."""
+def _structure_errors(quiz: dict) -> list[str]:
+    """Forma del quiz: tipi, opzioni e indici. Un quiz che non la rispetta
+    viene rifiutato da Telegram (indici fuori range, opzioni vuote) oppure
+    esce ambiguo (opzioni duplicate) o banale (tutte le opzioni corrette)."""
     errors = []
+    question = quiz.get("question")
+    if not isinstance(question, str) or not question.strip():
+        errors.append("question mancante o vuota")
+
+    options = quiz.get("options")
+    if not isinstance(options, list) or not all(isinstance(o, str) for o in options):
+        return errors + ["options deve essere una lista di stringhe"]
+    if not _MIN_OPTIONS <= len(options) <= _MAX_OPTIONS:
+        errors.append(f"numero di opzioni fuori range: {len(options)} (ammesse {_MIN_OPTIONS}-{_MAX_OPTIONS})")
+    if any(not o.strip() for o in options):
+        errors.append("opzione vuota")
+    normalized = [o.strip().casefold() for o in options]
+    if len(set(normalized)) != len(normalized):
+        errors.append("opzioni duplicate")
+
+    ids = quiz.get("correct_option_ids")
+    if (not isinstance(ids, list) or not ids
+            or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
+        return errors + ["correct_option_ids deve essere una lista non vuota di interi"]
+    if len(set(ids)) != len(ids):
+        errors.append("correct_option_ids contiene indici ripetuti")
+    if any(not 0 <= i < len(options) for i in ids):
+        errors.append(f"correct_option_ids fuori range: {ids} con {len(options)} opzioni")
+    if len(set(ids)) >= len(options):
+        errors.append("tutte le opzioni sono marcate come corrette")
+
+    explanation = quiz.get("explanation", "")
+    if not isinstance(explanation, str):
+        errors.append("explanation deve essere una stringa")
+    elif explanation.count("\n") > _TELEGRAM_EXPLANATION_MAX_NEWLINES:
+        errors.append(f"explanation con più di {_TELEGRAM_EXPLANATION_MAX_NEWLINES} a capo")
+    return errors
+
+
+def validate_quiz(quiz: dict) -> list[str]:
+    """Controlla forma e limiti Telegram. Ritorna lista di errori, vuota se valido."""
+    errors = _structure_errors(quiz)
+    if errors:
+        # i limiti di lunghezza presuppongono campi del tipo giusto
+        return errors
     question = quiz.get("question", "")
     if len(question) > _TELEGRAM_QUESTION_MAX:
         errors.append(
@@ -380,9 +427,11 @@ def generate_valid_quiz() -> tuple[dict, dict | None]:
                     print("Riprovo con lo stesso provider...")
                 continue
 
-            print_quiz(quiz, episode_ref)
+            # prima la validazione: print_quiz presuppone un quiz ben formato, e
+            # un'eccezione qui fuori dal try fermerebbe il run senza fallback
             errors = validate_quiz(quiz)
             if not errors:
+                print_quiz(quiz, episode_ref)
                 return quiz, episode_ref
             print(
                 f"Quiz non valido (tentativo {attempt}/{_MAX_QUIZ_RETRIES}): {'; '.join(errors)}",
