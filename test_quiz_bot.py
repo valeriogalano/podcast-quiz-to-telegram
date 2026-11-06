@@ -785,3 +785,26 @@ class TestMalformedQuizIsRetried(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUncertainSend(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0], "explanation": "E"}
+
+    def run_main(self, send):
+        with patch.object(sys, "argv", ["quiz_bot.py"]), \
+                patch("quiz_bot.generate_valid_quiz", return_value=(dict(self.QUIZ), None)), \
+                patch("quiz_bot.send_poll", side_effect=send), patch("builtins.print"):
+            quiz_bot.main()
+
+    def test_a_read_timeout_exits_with_the_uncertain_code(self):
+        import requests
+        with self.assertRaises(SystemExit) as cm:
+            self.run_main(requests.exceptions.ReadTimeout("read timed out"))
+        self.assertEqual(quiz_bot.EXIT_UNCERTAIN, cm.exception.code)
+
+    def test_a_logging_error_after_sending_does_not_fail_the_run(self):
+        # correct_option_ids malformato solo nel log: il poll è già uscito
+        def send(quiz, ref):
+            quiz["correct_option_ids"] = []
+            return {"result": {"message_id": 1}}
+        self.run_main(send)
