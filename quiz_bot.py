@@ -1,10 +1,12 @@
 import datetime
+import html
 import json
 import os
 import re
 import random
 import sys
 import time
+from html.parser import HTMLParser
 
 try:
     from dotenv import load_dotenv
@@ -19,16 +21,24 @@ import feedparser
 import requests
 
 # ── Configurazione ────────────────────────────────────────────────────────────
-FEED_RSS_URL = os.environ.get("FEED_RSS_URL", "")
-GITHUB_REPO = os.environ.get("GH_REPO", "")
-GITHUB_SCRIPTS_PATH = os.environ.get("GH_SCRIPTS_PATH", "")
-SCRIPT_EXTENSIONS = tuple(
-    ext.strip() for ext in os.environ.get("SCRIPT_EXTENSION", ".md").split(",")
-)
+# Su Actions una `vars.X` non definita arriva come stringa vuota, non come
+# variabile assente: `or` fa valere il default anche in quel caso.
+FEED_RSS_URL = os.environ.get("FEED_RSS_URL") or ""
+GITHUB_REPO = os.environ.get("GH_REPO") or ""
+GITHUB_SCRIPTS_PATH = os.environ.get("GH_SCRIPTS_PATH") or ""
+
+
+def _script_extensions(raw: str | None) -> tuple[str, ...]:
+    # un'estensione vuota renderebbe compatibile qualunque file ("x".endswith(""))
+    extensions = tuple(ext.strip() for ext in (raw or "").split(",") if ext.strip())
+    return extensions or (".md",)
+
+
+SCRIPT_EXTENSIONS = _script_extensions(os.environ.get("SCRIPT_EXTENSION"))
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-QUIZ_PROVIDER = os.environ.get("QUIZ_PROVIDER", "google").lower()
+QUIZ_PROVIDER = (os.environ.get("QUIZ_PROVIDER") or "google").lower()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
@@ -49,11 +59,37 @@ _TELEGRAM_OPTION_MAX = 100
 _TELEGRAM_EXPLANATION_MAX = 200
 # Un 429 dice quanto aspettare: si aspetta una volta sola, al massimo così.
 _TELEGRAM_MAX_FLOOD_WAIT = 60
+_TELEGRAM_EXPLANATION_MAX_NEWLINES = 2
+# Il prompt chiede fra 2 e 6 opzioni: Telegram ne ammette di più, ma un quiz
+# fuori da questo range è un quiz che il modello non ha scritto come richiesto.
+_MIN_OPTIONS = 2
+_MAX_OPTIONS = 6
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class QuizProviderError(RuntimeError):
     """Errore recuperabile durante la generazione del quiz via provider AI."""
+
+
+class TelegramError(RuntimeError):
+    """Telegram ha rifiutato la richiesta. Il messaggio riporta stato e motivo,
+    mai l'URL: contiene il token del bot, che finirebbe in chiaro nei log."""
+
+    def __init__(self, status_code: int, description: str):
+        super().__init__(f"Telegram ha rifiutato sendPoll: HTTP {status_code} — {description}")
+        self.status_code = status_code
+        self.description = description
+
+
+def _raise_for_telegram(resp) -> None:
+    """Al posto di resp.raise_for_status(), il cui messaggio contiene l'URL."""
+    if resp.ok:
+        return
+    try:
+        description = resp.json().get("description", "")
+    except ValueError:
+        description = (resp.text or "")[:200]
+    raise TelegramError(resp.status_code, description)
 
 
 _JSON_SCHEMA = """\
@@ -139,13 +175,85 @@ def fetch_random_episode() -> dict:
     return random.choice(feed.entries)
 
 
+class _TextExtractor(HTMLParser):
+    _BLOCKS = {"p", "br", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "tr", "blockquote"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self._BLOCKS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def html_to_text(value: str) -> str:
+    """Le note degli episodi nel feed sono HTML: i tag consumerebbero parte dei
+    caratteri mandati al modello. Resta il testo, con un a capo per blocco."""
+    if "<" not in value:
+        return html.unescape(value).strip()
+    parser = _TextExtractor()
+    parser.feed(value)
+    parser.close()
+    text = "".join(parser.parts)
+    lines = (" ".join(line.split()) for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
+
+
 def extract_transcript(episode: dict) -> str:
     if hasattr(episode, "content") and episode.content:
-        return episode.content[0].get("value", "")
-    return episode.get("summary") or episode.get("itunes_transcript") or ""
+        return html_to_text(episode.content[0].get("value", ""))
+    return html_to_text(episode.get("summary") or episode.get("itunes_transcript") or "")
 
 
-def fetch_github_script(title: str) -> str:
+# Parole che compaiono nei titoli di episodi diversi e non dicono nulla sul tema.
+_STOPWORDS = {
+    "della", "delle", "dello", "degli", "nella", "nelle", "nello", "negli", "dalla",
+    "dalle", "alla", "alle", "sulla", "sulle", "come", "cosa", "sono", "anche", "quando",
+    "perché", "perche", "questo", "questa", "quello", "quella", "episodio", "puntata",
+}
+
+
+def _episode_number(link: str) -> int | None:
+    """Il sito pubblica gli episodi su /episodes/NNN-slug: NNN identifica lo script."""
+    match = re.search(r"/episodes?/(\d+)", link or "")
+    return int(match.group(1)) if match else None
+
+
+def _pick_script(files: list[dict], title: str, link: str = "") -> dict | None:
+    """Sceglie lo script dell'episodio, o nessuno.
+
+    Prima per numero (gli script si chiamano PICNNN.yml); altrimenti per parole
+    del titolo, ma solo se ne coincide più della metà e senza pareggi: con una
+    parola in comune ("futuro") si sceglieva lo script di un altro episodio.
+    """
+    candidates = [f for f in files if f.get("name", "").endswith(SCRIPT_EXTENSIONS)]
+
+    number = _episode_number(link)
+    if number is not None:
+        for item in candidates:
+            digits = re.findall(r"\d+", item["name"])
+            if digits and int(digits[0]) == number:
+                return item
+
+    keywords = [kw for kw in set(re.findall(r"\b\w{4,}\b", title.lower())) if kw not in _STOPWORDS]
+    if not keywords:
+        return None
+    scored = sorted(
+        ((sum(1 for kw in keywords if kw in item["name"].lower()), item) for item in candidates),
+        key=lambda pair: pair[0], reverse=True,
+    )
+    if not scored or scored[0][0] * 2 <= len(keywords):
+        return None
+    if len(scored) > 1 and scored[1][0] == scored[0][0]:
+        return None
+    return scored[0][1]
+
+
+def fetch_github_script(title: str, link: str = "") -> str:
     try:
         resp = requests.get(
             f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_SCRIPTS_PATH}",
@@ -157,15 +265,7 @@ def fetch_github_script(title: str) -> str:
         print(f"Avviso: impossibile accedere al repo GitHub ({e}).", file=sys.stderr)
         return ""
 
-    keywords = re.findall(r"\b\w{4,}\b", title.lower())
-    best_match, best_score = None, 0
-    for item in files:
-        if not item.get("name", "").endswith(SCRIPT_EXTENSIONS):
-            continue
-        score = sum(1 for kw in keywords if kw in item["name"].lower())
-        if score > best_score:
-            best_score, best_match = score, item
-
+    best_match = _pick_script(files, title, link)
     if not best_match:
         return ""
 
@@ -178,6 +278,21 @@ def fetch_github_script(title: str) -> str:
         return ""
 
 
+def _parse_quiz_json(raw: str, model: str, provider_name: str) -> dict:
+    """Testo del modello -> quiz: toglie un eventuale blocco ``` e annota il modello."""
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise QuizProviderError(f"risposta di {provider_name} non è un JSON valido: {e}\n{raw}") from e
+    if not isinstance(result, dict):
+        raise QuizProviderError(f"risposta di {provider_name} non è un oggetto JSON: {raw}")
+    result["model"] = model
+    return result
+
+
 def call_claude(system: str, user: str) -> dict:
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     message = client.messages.create(
@@ -188,15 +303,8 @@ def call_claude(system: str, user: str) -> dict:
         messages=[{"role": "user", "content": user}],
     )
     # Il modello può mettere in testa un blocco di ragionamento: conta solo il testo.
-    raw = "".join(b.text for b in message.content if b.type == "text").strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise QuizProviderError(f"risposta di Claude non è un JSON valido: {e}\n{raw}") from e
-    result["model"] = _CLAUDE_MODEL
-    return result
+    raw = "".join(b.text for b in message.content if b.type == "text")
+    return _parse_quiz_json(raw, _CLAUDE_MODEL, "Claude")
 
 
 def get_quiz_providers() -> list[str]:
@@ -225,15 +333,7 @@ def call_gemini(system: str, user: str) -> dict:
         ),
         contents=user,
     )
-    raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise QuizProviderError(f"risposta di Gemini non è un JSON valido: {e}\n{raw}") from e
-    result["model"] = _GEMINI_MODEL
-    return result
+    return _parse_quiz_json(response.text or "", _GEMINI_MODEL, "Gemini")
 
 
 def build_poll_description(quiz: dict) -> str:
@@ -308,9 +408,11 @@ def send_poll(quiz: dict, episode_ref: dict | None = None) -> dict:
         # Un 4xx vuol dire che il poll non è partito: se la colpa è del
         # pulsante, il quiz va pubblicato comunque, senza.
         print(f"Avviso: poll rifiutato col pulsante ({resp.text}), riprovo senza.", file=sys.stderr)
-        del payload["reply_markup"]
+        # una copia, non il dict già inviato: chi lo ha ricevuto (e un mock nei
+        # test) deve continuare a vedere il pulsante del primo invio
+        payload = {k: v for k, v in payload.items() if k != "reply_markup"}
         resp = _post_poll(payload)
-    resp.raise_for_status()
+    _raise_for_telegram(resp)
     return resp.json()
 
 
@@ -334,7 +436,7 @@ def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | Non
             print("Estraggo la trascrizione...")
             transcript = extract_transcript(episode)
             print("Cerco lo script nel repo GitHub...")
-            script = fetch_github_script(title)
+            script = fetch_github_script(title, episode.get("link") or "")
             if transcript or script:
                 content = "\n\n".join(filter(None, [
                     f"TRASCRIZIONE:\n{transcript[:4000]}" if transcript else "",
@@ -350,9 +452,51 @@ def generate_quiz_content(provider: str | None = None) -> tuple[dict, dict | Non
     return call_ai(_GENERIC_SYSTEM, f"Genera un quiz sul tema: {topic}", provider), None
 
 
-def validate_quiz(quiz: dict) -> list[str]:
-    """Controlla i limiti Telegram. Ritorna lista di errori, vuota se valido."""
+def _structure_errors(quiz: dict) -> list[str]:
+    """Forma del quiz: tipi, opzioni e indici. Un quiz che non la rispetta
+    viene rifiutato da Telegram (indici fuori range, opzioni vuote) oppure
+    esce ambiguo (opzioni duplicate) o banale (tutte le opzioni corrette)."""
     errors = []
+    question = quiz.get("question")
+    if not isinstance(question, str) or not question.strip():
+        errors.append("question mancante o vuota")
+
+    options = quiz.get("options")
+    if not isinstance(options, list) or not all(isinstance(o, str) for o in options):
+        return errors + ["options deve essere una lista di stringhe"]
+    if not _MIN_OPTIONS <= len(options) <= _MAX_OPTIONS:
+        errors.append(f"numero di opzioni fuori range: {len(options)} (ammesse {_MIN_OPTIONS}-{_MAX_OPTIONS})")
+    if any(not o.strip() for o in options):
+        errors.append("opzione vuota")
+    normalized = [o.strip().casefold() for o in options]
+    if len(set(normalized)) != len(normalized):
+        errors.append("opzioni duplicate")
+
+    ids = quiz.get("correct_option_ids")
+    if (not isinstance(ids, list) or not ids
+            or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
+        return errors + ["correct_option_ids deve essere una lista non vuota di interi"]
+    if len(set(ids)) != len(ids):
+        errors.append("correct_option_ids contiene indici ripetuti")
+    if any(not 0 <= i < len(options) for i in ids):
+        errors.append(f"correct_option_ids fuori range: {ids} con {len(options)} opzioni")
+    if len(set(ids)) >= len(options):
+        errors.append("tutte le opzioni sono marcate come corrette")
+
+    explanation = quiz.get("explanation", "")
+    if not isinstance(explanation, str):
+        errors.append("explanation deve essere una stringa")
+    elif explanation.count("\n") > _TELEGRAM_EXPLANATION_MAX_NEWLINES:
+        errors.append(f"explanation con più di {_TELEGRAM_EXPLANATION_MAX_NEWLINES} a capo")
+    return errors
+
+
+def validate_quiz(quiz: dict) -> list[str]:
+    """Controlla forma e limiti Telegram. Ritorna lista di errori, vuota se valido."""
+    errors = _structure_errors(quiz)
+    if errors:
+        # i limiti di lunghezza presuppongono campi del tipo giusto
+        return errors
     question = quiz.get("question", "")
     if len(question) > _TELEGRAM_QUESTION_MAX:
         errors.append(
@@ -381,6 +525,10 @@ def validate_quiz(quiz: dict) -> list[str]:
 
 _MAX_QUIZ_RETRIES = 5
 
+# Codice d'uscita quando non si sa se il poll è uscito: diverso da 1 (fallito
+# di sicuro), perché rilanciare il run potrebbe pubblicare un secondo quiz.
+EXIT_UNCERTAIN = 3
+
 
 def generate_valid_quiz() -> tuple[dict, dict | None]:
     """Genera un quiz valido rispetto ai limiti Telegram provando i provider configurati."""
@@ -400,9 +548,11 @@ def generate_valid_quiz() -> tuple[dict, dict | None]:
                     print("Riprovo con lo stesso provider...")
                 continue
 
-            print_quiz(quiz, episode_ref)
+            # prima la validazione: print_quiz presuppone un quiz ben formato, e
+            # un'eccezione qui fuori dal try fermerebbe il run senza fallback
             errors = validate_quiz(quiz)
             if not errors:
+                print_quiz(quiz, episode_ref)
                 return quiz, episode_ref
             print(
                 f"Quiz non valido (tentativo {attempt}/{_MAX_QUIZ_RETRIES}): {'; '.join(errors)}",
@@ -441,6 +591,9 @@ def main() -> None:
                         help="Genera N quiz (default 1) senza inviarli su Telegram")
     args = parser.parse_args()
 
+    if not FEED_RSS_URL:
+        print("Avviso: FEED_RSS_URL non impostata, solo quiz generici.", file=sys.stderr)
+
     if args.dry_run is not None:
         print("Scarico il feed RSS...")
         for i in range(1, args.dry_run + 1):
@@ -452,18 +605,32 @@ def main() -> None:
     quiz, episode_ref = generate_valid_quiz()
 
     print("Invio il poll su Telegram...")
-    poll_message_id = send_poll(quiz, episode_ref)["result"]["message_id"]
+    try:
+        poll_message_id = send_poll(quiz, episode_ref)["result"]["message_id"]
+    except requests.exceptions.ReadTimeout:
+        # La richiesta è partita e la risposta non è arrivata: Telegram può
+        # averla accettata. Ripeterla rischia un doppione, quindi non si ripete.
+        print(
+            "Esito incerto: timeout in attesa della risposta di Telegram, il poll potrebbe "
+            "essere stato pubblicato. Controlla il canale prima di rilanciare.",
+            file=sys.stderr,
+        )
+        sys.exit(EXIT_UNCERTAIN)
 
-    episode_title = episode_ref["title"] if episode_ref else None
-    correct = quiz["options"][quiz["correct_option_ids"][0]]
-    print(
-        f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
-        f"type={'episodio' if episode_ref else 'generico'} "
-        f"episode={episode_title!r} poll_id={poll_message_id} status=success\n"
-        f"  Q: {quiz['question']}\n"
-        f"  A: {correct}\n"
-        f"  💡 {quiz.get('explanation', '')}"
-    )
+    # il poll è uscito: un errore nel log non deve far sembrare fallito il run
+    try:
+        episode_title = episode_ref["title"] if episode_ref else None
+        correct = " | ".join(quiz["options"][i] for i in quiz["correct_option_ids"])
+        print(
+            f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
+            f"type={'episodio' if episode_ref else 'generico'} "
+            f"episode={episode_title!r} poll_id={poll_message_id} status=success\n"
+            f"  Q: {quiz['question']}\n"
+            f"  A: {correct}\n"
+            f"  💡 {quiz.get('explanation', '')}"
+        )
+    except Exception as e:
+        print(f"Avviso: log finale non riuscito ({e}).", file=sys.stderr)
     print("Quiz pubblicato con successo!")
 
 
