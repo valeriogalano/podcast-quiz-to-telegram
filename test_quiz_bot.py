@@ -330,6 +330,34 @@ class TestTelegramErrors(unittest.TestCase):
         self.assertLess(len(str(cm.exception)), 300)
 
 
+class TestFloodControl(unittest.TestCase):
+    QUIZ = {"question": "Q?", "options": ["A", "B"], "correct_option_ids": [0]}
+
+    @patch("quiz_bot.time.sleep")
+    @patch("quiz_bot.requests.post")
+    def test_429_waits_and_resends_the_same_payload_with_the_button(self, mock_post, mock_sleep):
+        limited = MagicMock(status_code=429)
+        limited.json.return_value = {"ok": False, "parameters": {"retry_after": 7}}
+        ok = MagicMock(status_code=200)
+        ok.json.return_value = {"result": {"message_id": 9}}
+        mock_post.side_effect = [limited, ok]
+        result = quiz_bot.send_poll(self.QUIZ, {"title": "T", "link": "https://example.com/ep"})
+        self.assertEqual(9, result["result"]["message_id"])
+        mock_sleep.assert_called_once_with(7)
+        self.assertIn("reply_markup", mock_post.call_args.kwargs["json"])
+
+    @patch("quiz_bot.time.sleep")
+    @patch("quiz_bot.requests.post")
+    def test_the_wait_is_capped(self, mock_post, mock_sleep):
+        limited = MagicMock(status_code=429)
+        limited.json.return_value = {"parameters": {"retry_after": 3600}}
+        ok = MagicMock(status_code=200)
+        ok.json.return_value = {"result": {"message_id": 1}}
+        mock_post.side_effect = [limited, ok]
+        quiz_bot.send_poll(self.QUIZ)
+        mock_sleep.assert_called_once_with(quiz_bot._TELEGRAM_MAX_FLOOD_WAIT)
+
+
 class TestValidateQuiz(unittest.TestCase):
     def test_valid_quiz_returns_no_errors(self):
         quiz = {
