@@ -1,0 +1,37 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        # 3.11 is what quiz.yml runs in production; 3.13 catches what a newer
+        # interpreter breaks before production moves to it
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      # quiz_bot reads TELEGRAM_CHAT_ID and TELEGRAM_BOT_TOKEN at import: the
+      # tests set fake values themselves, nothing real is needed or called
+      - name: Run tests
+        run: python -m pytest -v
