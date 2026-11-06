@@ -5,9 +5,21 @@ on:
     - cron: "0 10,15 * * *"
   workflow_dispatch:
 
+# The job only reads the code: the token needs no write access.
+permissions:
+  contents: read
+
+# A manual run started to make up for a late scheduled one must not overlap it:
+# two quizzes would go out minutes apart. The second run waits instead.
+concurrency:
+  group: daily-quiz
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # without it a stuck provider or feed keeps the job up to the 6-hour limit (run #538)
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
