@@ -325,6 +325,28 @@ def get_quiz_providers() -> list[str]:
     return providers or ["google"]
 
 
+def _provider_key(provider: str) -> str | None:
+    """La chiave del provider, "" se manca, None se il provider è sconosciuto."""
+    if provider in {"anthropic", "claude"}:
+        return ANTHROPIC_API_KEY
+    if provider in {"google", "gemini"}:
+        return GOOGLE_API_KEY
+    return None
+
+
+def usable_providers(providers: list[str]) -> list[str]:
+    """Toglie i provider senza chiave: una chiave mancante non compare al quinto
+    tentativo, e cinque errori d'autenticazione prima di arrendersi non servono.
+    I provider sconosciuti restano, così call_ai li segnala col suo errore."""
+    usable = []
+    for provider in providers:
+        if _provider_key(provider) == "":
+            print(f"Avviso: provider {provider} senza chiave API, lo salto.", file=sys.stderr)
+            continue
+        usable.append(provider)
+    return usable
+
+
 def call_ai(system: str, user: str, provider: str | None = None) -> dict:
     selected = (provider or get_quiz_providers()[0]).lower()
     if selected in {"anthropic", "claude"}:
@@ -557,7 +579,14 @@ EXIT_UNCERTAIN = 3
 
 def generate_valid_quiz() -> tuple[dict, dict | None]:
     """Genera un quiz valido rispetto ai limiti Telegram provando i provider configurati."""
-    providers = get_quiz_providers()
+    providers = usable_providers(get_quiz_providers())
+    if not providers:
+        print(
+            "Errore: nessun provider AI configurato ha una chiave API "
+            "(GOOGLE_API_KEY per google/gemini, ANTHROPIC_API_KEY per anthropic/claude).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     for provider_index, provider in enumerate(providers, start=1):
         if len(providers) > 1:
             print(f"Uso provider AI {provider_index}/{len(providers)}: {provider}")
