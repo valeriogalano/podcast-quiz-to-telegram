@@ -47,17 +47,43 @@ class TestExtractTranscriptHtml(unittest.TestCase):
 
 
 class TestFetchRandomEpisode(unittest.TestCase):
+    @patch("quiz_bot.requests.get")
     @patch("quiz_bot.feedparser")
-    def test_returns_random_episode(self, mock_feedparser):
+    def test_returns_random_episode(self, mock_feedparser, mock_get):
         mock_feedparser.parse.return_value.entries = [{"title": "Ep 1"}, {"title": "Ep 2"}]
         episode = quiz_bot.fetch_random_episode()
         self.assertIn(episode["title"], ["Ep 1", "Ep 2"])
+        self.assertEqual(quiz_bot._FEED_TIMEOUT_SECONDS, mock_get.call_args.kwargs["timeout"])
+        mock_feedparser.parse.assert_called_once_with(mock_get.return_value.content)
 
+    @patch("quiz_bot.requests.get")
     @patch("quiz_bot.feedparser")
-    def test_raises_on_empty_feed(self, mock_feedparser):
+    def test_raises_on_empty_feed(self, mock_feedparser, _):
         mock_feedparser.parse.return_value.entries = []
         with self.assertRaises(RuntimeError):
             quiz_bot.fetch_random_episode()
+
+    @patch("quiz_bot.requests.get", side_effect=quiz_bot.requests.Timeout("feed lento"))
+    def test_an_unreachable_feed_is_a_runtime_error(self, _):
+        # generate_quiz_content intercetta RuntimeError e passa al quiz generico
+        with self.assertRaises(RuntimeError):
+            quiz_bot.fetch_random_episode()
+
+
+class TestClientTimeouts(unittest.TestCase):
+    @patch("quiz_bot.anthropic.Anthropic")
+    def test_claude_client_has_a_timeout(self, mock_anthropic):
+        mock_anthropic.return_value.messages.create.return_value.content = [
+            MagicMock(type="text", text='{"question": "Q"}')]
+        quiz_bot.call_claude("s", "u")
+        self.assertEqual(quiz_bot._AI_TIMEOUT_SECONDS, mock_anthropic.call_args.kwargs["timeout"])
+
+    @patch("quiz_bot.genai.Client")
+    def test_gemini_client_has_a_timeout(self, mock_client):
+        mock_client.return_value.models.generate_content.return_value.text = '{"question": "Q"}'
+        quiz_bot.call_gemini("s", "u")
+        options = mock_client.call_args.kwargs["http_options"]
+        self.assertEqual(quiz_bot._AI_TIMEOUT_SECONDS * 1000, options.timeout)
 
 
 class TestFetchGithubScript(unittest.TestCase):
