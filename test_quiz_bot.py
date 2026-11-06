@@ -36,6 +36,16 @@ class TestExtractTranscript(unittest.TestCase):
         self.assertEqual(quiz_bot.extract_transcript(episode), "")
 
 
+class TestExtractTranscriptHtml(unittest.TestCase):
+    def test_html_is_reduced_to_text_before_truncation(self):
+        episode = {"summary": '<p>Parliamo di <strong>DNS</strong> &amp; CDN.</p>'
+                              '<ul><li><a href="https://x.it">Fonte</a></li></ul>'}
+        self.assertEqual("Parliamo di DNS & CDN.\nFonte", quiz_bot.extract_transcript(episode))
+
+    def test_plain_text_is_left_alone(self):
+        self.assertEqual("testo < semplice", quiz_bot.html_to_text("testo &lt; semplice"))
+
+
 class TestFetchRandomEpisode(unittest.TestCase):
     @patch("quiz_bot.feedparser")
     def test_returns_random_episode(self, mock_feedparser):
