@@ -600,7 +600,7 @@ def main() -> None:
     # il poll è uscito: un errore nel log non deve far sembrare fallito il run
     try:
         episode_title = episode_ref["title"] if episode_ref else None
-        correct = quiz["options"][quiz["correct_option_ids"][0]]
+        correct = " | ".join(quiz["options"][i] for i in quiz["correct_option_ids"])
         print(
             f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] "
             f"type={'episodio' if episode_ref else 'generico'} "

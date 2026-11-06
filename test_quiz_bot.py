@@ -841,3 +841,18 @@ class TestUncertainSend(unittest.TestCase):
             quiz["correct_option_ids"] = []
             return {"result": {"message_id": 1}}
         self.run_main(send)
+
+
+class TestFinalLog(unittest.TestCase):
+    def test_every_correct_answer_is_logged(self):
+        import io
+        from contextlib import redirect_stdout
+        quiz = {"question": "Quali?", "options": ["A", "B", "C"], "correct_option_ids": [0, 2],
+                "explanation": "E"}
+        out = io.StringIO()
+        with patch.object(sys, "argv", ["quiz_bot.py"]), \
+                patch("quiz_bot.generate_valid_quiz", return_value=(quiz, None)), \
+                patch("quiz_bot.send_poll", return_value={"result": {"message_id": 1}}), \
+                redirect_stdout(out):
+            quiz_bot.main()
+        self.assertIn("A: A | C", out.getvalue())
