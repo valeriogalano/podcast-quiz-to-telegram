@@ -902,7 +902,8 @@ class TestMalformedQuizIsRetried(unittest.TestCase):
             ({"question": "Q?", "correct_option_ids": [0]}, None),
             (valid, None),
         ]
-        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), patch("builtins.print"):
+        with patch.object(quiz_bot, "QUIZ_PROVIDER", "google"), patch.object(quiz_bot, "GOOGLE_API_KEY", "key"), \
+                patch("builtins.print"):
             quiz, _ = quiz_bot.generate_valid_quiz()
         self.assertEqual(valid, quiz)
         self.assertEqual(3, mock_gen.call_count)
