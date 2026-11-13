@@ -27,7 +27,7 @@ Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRA
 
 ## Workflow GitHub Actions
 
-`quiz.yml` — si esegue alle 10:17 e alle 15:17 UTC (cron `17 10,15 * * *`), oppure manualmente via `workflow_dispatch`. Ogni esecuzione pubblica un quiz. In caso di fallimento, un job separato avvisa la chat privata indicata nel secret `TELEGRAM_ADMIN_CHAT_ID` usando `TELEGRAM_BOT_TOKEN`. Le altre variabili d'ambiente sensibili sono GitHub Secrets, le restanti GitHub Variables. La prevenzione della disattivazione per inattività resta da decidere.
+`quiz.yml` — si esegue alle 10:17 e alle 15:17 UTC (cron `17 10,15 * * *`), oppure manualmente via `workflow_dispatch`. Ogni esecuzione pubblica un quiz. A ogni esecuzione schedulata un job isolato riabilita preventivamente il workflow via API con `actions: write`. In caso di fallimento della pubblicazione o del keepalive, un job separato avvisa la chat privata indicata nel secret `TELEGRAM_ADMIN_CHAT_ID` usando `TELEGRAM_BOT_TOKEN`. Le altre variabili d'ambiente sensibili sono GitHub Secrets, le restanti GitHub Variables.
 
 ## Logica principale
 
