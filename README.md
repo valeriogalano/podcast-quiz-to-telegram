@@ -47,6 +47,10 @@ Ad ogni esecuzione lo script:
 
 Copia `.env.example` in `.env` e compila i valori. In GitHub Actions vanno in **Settings → Secrets and variables → Actions**: le chiavi (`TELEGRAM_BOT_TOKEN`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) come **Secrets**, tutte le altre come **Variables** (il workflow le legge da `vars`: una variabile messa fra i Secrets arriva vuota).
 
+Il workflow parte alle 10:17 e alle 15:17 UTC (`17 10,15 * * *`) o manualmente. Per ricevere gli errori in privato, configura il secret GitHub `TELEGRAM_ADMIN_CHAT_ID` con l'ID numerico della chat personale e assicurati che il bot possa inviarvi messaggi. Non usare l'ID del canale dei quiz. La notifica copre pubblicazione e keepalive, contiene repository, workflow e link al run; un suo errore resta visibile nel run.
+
+GitHub può disattivare le schedule dei repository pubblici dopo 60 giorni senza attività. A ogni run schedulato, un job isolato usa `liskin/gh-workflow-keepalive` per riabilitare preventivamente il workflow tramite API, senza commit automatici. Il progetto dell'action indica che questo evita la disattivazione, ma GitHub non documenta esplicitamente il reset del conteggio. Il job richiede `actions: write`; se la schedule si ferma, non può riattivarsi da solo e va riabilitata dall'esterno.
+
 | Variabile | Obbligatoria | Descrizione |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | ✓ | Token del bot Telegram |
