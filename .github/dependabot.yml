@@ -4,7 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    assignees: [valeriogalano]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    assignees: [valeriogalano]
