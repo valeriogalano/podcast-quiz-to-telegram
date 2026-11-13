@@ -2,7 +2,7 @@ name: Daily Quiz
 
 on:
   schedule:
-    - cron: "0 10,15 * * *"
+    - cron: "17 10,15 * * *"
   workflow_dispatch:
 
 # The job only reads the code: the token needs no write access.
@@ -49,3 +49,28 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python quiz_bot.py
+
+  notify-failure:
+    needs: publish
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Notify private chat
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          if [[ ! "$ADMIN_CHAT_ID" =~ ^-?[1-9][0-9]*$ ]] || [[ -z "$BOT_TOKEN" ]]; then
+            echo "Notification chat ID or bot token is missing or invalid" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 30 \
+            --data-urlencode "chat_id=$ADMIN_CHAT_ID" \
+            --data-urlencode "text=Quiz failed: $REPOSITORY / $WORKFLOW
+          $RUN_URL" \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" |
+            python3 -c 'import json, sys; sys.exit(0 if json.load(sys.stdin).get("ok") is True else 1)'
