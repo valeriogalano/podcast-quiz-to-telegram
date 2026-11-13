@@ -647,6 +647,23 @@ class TestCallAi(unittest.TestCase):
         with self.assertRaises(quiz_bot.QuizProviderError):
             quiz_bot.call_ai("system", "user", provider="unknown")
 
+    @patch("quiz_bot.requests.post")
+    def test_deepseek_request_and_response(self, post):
+        post.return_value.json.return_value = {"choices": [{"message": {"content": '{"question":"Q"}'}}]}
+        with patch.object(quiz_bot, "DEEPSEEK_API_KEY", "test-key"):
+            quiz = quiz_bot.call_ai("system", "user", provider="deepseek")
+        self.assertEqual({"question": "Q", "model": "deepseek-flash"}, quiz)
+        post.return_value.raise_for_status.assert_called_once()
+        self.assertEqual("Bearer test-key", post.call_args.kwargs["headers"]["Authorization"])
+        self.assertEqual(quiz_bot._AI_TIMEOUT_SECONDS, post.call_args.kwargs["timeout"])
+        self.assertEqual({"type": "json_object"}, post.call_args.kwargs["json"]["response_format"])
+
+    @patch("quiz_bot.requests.post")
+    def test_deepseek_empty_response_is_retried_as_provider_error(self, post):
+        post.return_value.json.return_value = {"choices": [{"message": {"content": None}}]}
+        with self.assertRaises(quiz_bot.QuizProviderError):
+            quiz_bot.call_deepseek("system", "user")
+
 
 class TestEmptyVariables(unittest.TestCase):
     def test_empty_or_blank_extensions_fall_back_to_md(self):
@@ -670,6 +687,10 @@ class TestEmptyVariables(unittest.TestCase):
 
 
 class TestUsableProviders(unittest.TestCase):
+    def test_deepseek_without_key_is_skipped(self):
+        with patch.object(quiz_bot, "DEEPSEEK_API_KEY", ""), patch("builtins.print"):
+            self.assertEqual([], quiz_bot.usable_providers(["deepseek"]))
+
     def test_providers_without_a_key_are_skipped(self):
         with patch.object(quiz_bot, "GOOGLE_API_KEY", ""), patch.object(quiz_bot, "ANTHROPIC_API_KEY", "k"), \
                 patch("builtins.print"):

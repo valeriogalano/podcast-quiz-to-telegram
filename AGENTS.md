@@ -1,6 +1,6 @@
 # Botcaster Quiz Generator
 
-Bot Telegram che pubblica quotidianamente un quiz basato sugli episodi del podcast Pensieri in Codice, generato da un LLM (Google Gemini o Anthropic Claude, configurabile via `QUIZ_PROVIDER`).
+Bot Telegram che pubblica quotidianamente un quiz basato sugli episodi del podcast Pensieri in Codice, generato da un LLM (Google Gemini, Anthropic Claude o DeepSeek, configurabile via `QUIZ_PROVIDER`).
 
 ## Setup locale
 
@@ -21,9 +21,9 @@ python -m pytest test_quiz_bot.py -v
 
 ## Variabili d'ambiente
 
-Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_TOKEN` e la chiave del provider AI scelto (`ANTHROPIC_API_KEY` e/o `GOOGLE_API_KEY`).
+Vedi `.env.example`. Le variabili obbligatorie sono `TELEGRAM_CHAT_ID`, `TELEGRAM_BOT_TOKEN` e la chiave del provider AI scelto (`ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` e/o `DEEPSEEK_API_KEY`).
 
-`QUIZ_PROVIDER` è opzionale: provider AI da usare, `google`/`gemini` o `anthropic`/`claude`, anche più di uno separato da virgola come fallback. Default: `google`.
+`QUIZ_PROVIDER` è opzionale: provider AI da usare, `google`/`gemini`, `anthropic`/`claude` o `deepseek`, anche più di uno separato da virgola come fallback. Default: `google`.
 
 ## Workflow GitHub Actions
 
