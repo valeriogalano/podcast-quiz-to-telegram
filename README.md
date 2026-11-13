@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://cdn.pensieriincodice.it/images/pensieriincodice-locandina.png" alt="Logo Progetto" width="150"/>
   <h1>Pensieri in codice — Quiz Generator</h1>
-  <p>Pubblica automaticamente un quiz giornaliero nel canale Telegram del podcast, generato da Claude AI a partire dagli episodi.</p>
+  <p>Pubblica automaticamente un quiz giornaliero nel canale Telegram del podcast, generato da un provider AI a partire dagli episodi.</p>
   <p>
     <img src="https://img.shields.io/github/stars/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="GitHub Stars"/>
     <img src="https://img.shields.io/github/forks/valeriogalano/podcast-quiz-to-telegram?style=for-the-badge" alt="GitHub Forks"/>
@@ -22,7 +22,7 @@
 Ad ogni esecuzione lo script:
 
 1. Decide casualmente il tipo di quiz da generare:
-   - **75% delle volte**: quiz generico — sceglie un tema casuale tra 29 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e lo fa generare al provider AI configurato (Gemini per default, Claude come alternativa o fallback).
+   - **75% delle volte**: quiz generico — sceglie un tema casuale tra 29 categorie (linguaggi di programmazione, reti, sicurezza, database, Docker, Git, LLM, privacy, storia dell'informatica e altro) e lo fa generare al provider AI configurato (Gemini per default, Claude e DeepSeek come alternative o fallback).
    - **25% delle volte**: quiz da episodio — scarica il feed RSS, seleziona un episodio casuale, ne estrae la trascrizione e cerca il file script corrispondente nel repo GitHub. Se trova almeno uno dei due contenuti, li passa al provider AI per generare il quiz. Se non trova nulla, ricade sul quiz generico.
 2. Valida il quiz rispetto ai limiti dell'API Telegram (domanda ≤ 300 caratteri, descrizione ≤ 200 caratteri, ogni opzione ≤ 100 caratteri, spiegazione ≤ 200 caratteri). Se il quiz non è valido, lo rigenera automaticamente fino a un massimo di **5 tentativi**; se nessun tentativo produce un quiz valido, l'esecuzione termina con errore.
 3. Stampa il contenuto del quiz nei log (utile per il debug) e pubblica il quiz nel canale Telegram come **poll nativo di tipo quiz**, con:
@@ -37,7 +37,7 @@ Ad ogni esecuzione lo script:
 
 - Python 3.11+
 - Un bot Telegram (creabile tramite [@BotFather](https://t.me/botfather))
-- Una chiave API di Google (Gemini, provider di default) e/o di Anthropic (Claude)
+- Una chiave API di Google (Gemini, provider di default) e/o di Anthropic (Claude) o DeepSeek
 
 ---
 
@@ -45,7 +45,7 @@ Ad ogni esecuzione lo script:
 
 ### 1. Variabili d'ambiente / `.env`
 
-Copia `.env.example` in `.env` e compila i valori. In GitHub Actions vanno in **Settings → Secrets and variables → Actions**: le chiavi (`TELEGRAM_BOT_TOKEN`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`) come **Secrets**, tutte le altre come **Variables** (il workflow le legge da `vars`: una variabile messa fra i Secrets arriva vuota).
+Copia `.env.example` in `.env` e compila i valori. In GitHub Actions vanno in **Settings → Secrets and variables → Actions**: le chiavi (`TELEGRAM_BOT_TOKEN`, `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`) come **Secrets**, tutte le altre come **Variables** (il workflow le legge da `vars`: una variabile messa fra i Secrets arriva vuota).
 
 Il workflow parte alle 10:17 e alle 15:17 UTC (`17 10,15 * * *`) o manualmente. Per ricevere gli errori in privato, configura il secret GitHub `TELEGRAM_ADMIN_CHAT_ID` con l'ID numerico della chat personale e assicurati che il bot possa inviarvi messaggi. Non usare l'ID del canale dei quiz. La notifica copre pubblicazione e keepalive, contiene repository, workflow e link al run; un suo errore resta visibile nel run.
 
@@ -61,7 +61,8 @@ GitHub può disattivare le schedule dei repository pubblici dopo 60 giorni senza
 | `SCRIPT_EXTENSION` |  | Estensioni dei file script separate da virgola (es. `.json,.yml`, default `.md`) |
 | `GOOGLE_API_KEY` | se usi Gemini | Chiave API di Google (da [AI Studio](https://aistudio.google.com/)) |
 | `ANTHROPIC_API_KEY` | se usi Claude | Chiave API di Anthropic |
-| `QUIZ_PROVIDER` |  | Provider AI da usare, anche in fallback esplicito separato da virgola: `google` (default), `anthropic`, oppure `google,anthropic` |
+| `DEEPSEEK_API_KEY` | se usi DeepSeek | Chiave API di DeepSeek |
+| `QUIZ_PROVIDER` |  | Provider AI da usare, anche in fallback esplicito separato da virgola: `google` (default), `anthropic`, `deepseek`, oppure `google,anthropic,deepseek` |
 
 ---
 
@@ -194,7 +195,7 @@ Limiti imposti dall'API Telegram (validati a runtime, con rigenerazione automati
 
 ## Trasparenza
 
-I quiz pubblicati nel canale sono **generati automaticamente da un modello AI** (Claude di Anthropic oppure Gemini di Google, in base alla configurazione di `QUIZ_PROVIDER`), sulla base delle trascrizioni e degli script degli episodi. `QUIZ_PROVIDER` può contenere più provider separati da virgola: lo script esaurisce i tentativi sul primo prima di passare al successivo. Per rendere visibile la provenienza, **ogni quiz mostra in calce alla descrizione il nome del modello specifico usato per generarlo** (es. `Generato con claude-sonnet-5-5`).
+I quiz pubblicati nel canale sono **generati automaticamente da un modello AI** (Claude di Anthropic, Gemini di Google oppure DeepSeek Flash, in base alla configurazione di `QUIZ_PROVIDER`), sulla base delle trascrizioni e degli script degli episodi. `QUIZ_PROVIDER` può contenere più provider separati da virgola: lo script esaurisce i tentativi sul primo prima di passare al successivo. Per rendere visibile la provenienza, **ogni quiz mostra in calce alla descrizione il nome del modello specifico usato per generarlo** (es. `Generato con claude-sonnet-5-5`).
 
 Nonostante le istruzioni mirate, le risposte potrebbero contenere imprecisioni o errori. Per qualsiasi dubbio, fai sempre riferimento alle fonti originali degli episodi.
 

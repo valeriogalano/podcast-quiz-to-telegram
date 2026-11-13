@@ -38,6 +38,7 @@ SCRIPT_EXTENSIONS = _script_extensions(os.environ.get("SCRIPT_EXTENSION"))
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 QUIZ_PROVIDER = (os.environ.get("QUIZ_PROVIDER") or "google").lower()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
@@ -50,6 +51,7 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 # e https://ai.google.dev/gemini-api/docs/models.
 _CLAUDE_MODEL = "claude-sonnet-5-5"
 _GEMINI_MODEL = "gemini-3.8-flash"
+_DEEPSEEK_MODEL = "deepseek-flash"
 
 # Limiti dell'API Telegram Bot per i poll di tipo quiz.
 # Cfr. https://core.telegram.org/bots/api#sendpoll
@@ -331,6 +333,8 @@ def _provider_key(provider: str) -> str | None:
         return ANTHROPIC_API_KEY
     if provider in {"google", "gemini"}:
         return GOOGLE_API_KEY
+    if provider == "deepseek":
+        return DEEPSEEK_API_KEY
     return None
 
 
@@ -353,9 +357,26 @@ def call_ai(system: str, user: str, provider: str | None = None) -> dict:
         return call_claude(system, user)
     if selected in {"google", "gemini"}:
         return call_gemini(system, user)
+    if selected == "deepseek":
+        return call_deepseek(system, user)
     raise QuizProviderError(
-        f"provider AI non supportato: {selected!r}. Usa google/gemini oppure anthropic/claude."
+        f"provider AI non supportato: {selected!r}. Usa google/gemini, anthropic/claude oppure deepseek."
     )
+
+
+def call_deepseek(system: str, user: str) -> dict:
+    response = requests.post(
+        "https://api.deepseek.com/chat/completions",
+        headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"},
+        json={"model": _DEEPSEEK_MODEL, "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ], "response_format": {"type": "json_object"}, "max_tokens": 4096},
+        timeout=_AI_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    raw = response.json()["choices"][0]["message"]["content"] or ""
+    return _parse_quiz_json(raw, _DEEPSEEK_MODEL, "DeepSeek")
 
 
 def call_gemini(system: str, user: str) -> dict:
@@ -593,7 +614,7 @@ def generate_valid_quiz() -> tuple[dict, dict | None]:
     if not providers:
         print(
             "Errore: nessun provider AI configurato ha una chiave API "
-            "(GOOGLE_API_KEY per google/gemini, ANTHROPIC_API_KEY per anthropic/claude).",
+            "(GOOGLE_API_KEY, ANTHROPIC_API_KEY o DEEPSEEK_API_KEY).",
             file=sys.stderr,
         )
         sys.exit(1)
